@@ -49,3 +49,4 @@ data/*
 webapp/node_modules/
 webapp/.svelte-kit/
 webapp/build/
+webapp/data/
