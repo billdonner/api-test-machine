@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { derived } from 'svelte/store';
+	import { derived, writable } from 'svelte/store';
+	import { goto } from '$app/navigation';
 	import {
 		runs,
 		runsTotal,
@@ -11,9 +12,56 @@
 		stopPolling,
 		loadRuns
 	} from '$lib/stores';
-	import type { RunStatus } from '$lib/types';
+	import { api } from '$lib/api';
+	import type { RunStatus, RunSummary } from '$lib/types';
+	import RunsPerDayChart from '$lib/components/charts/RunsPerDayChart.svelte';
 
 	const statuses: (RunStatus | null)[] = [null, 'pending', 'running', 'completed', 'cancelled', 'failed'];
+
+	// Track which groups are expanded
+	const expandedGroups = writable<Set<string>>(new Set());
+
+	// Group runs by name
+	interface RunGroup {
+		name: string;
+		runs: RunSummary[];
+		latestRun: RunSummary;
+		passCount: number;
+		failCount: number;
+	}
+
+	const groupedRuns = derived(runs, ($runs) => {
+		const groups = new Map<string, RunSummary[]>();
+		for (const run of $runs) {
+			const existing = groups.get(run.name) || [];
+			existing.push(run);
+			groups.set(run.name, existing);
+		}
+
+		const result: RunGroup[] = [];
+		for (const [name, groupRuns] of groups) {
+			// Sort by started_at descending
+			groupRuns.sort((a, b) => {
+				const aTime = a.started_at ? new Date(a.started_at).getTime() : 0;
+				const bTime = b.started_at ? new Date(b.started_at).getTime() : 0;
+				return bTime - aTime;
+			});
+			result.push({
+				name,
+				runs: groupRuns,
+				latestRun: groupRuns[0],
+				passCount: groupRuns.filter(r => r.passed === true).length,
+				failCount: groupRuns.filter(r => r.passed === false).length
+			});
+		}
+		// Sort groups by latest run time
+		result.sort((a, b) => {
+			const aTime = a.latestRun.started_at ? new Date(a.latestRun.started_at).getTime() : 0;
+			const bTime = b.latestRun.started_at ? new Date(b.latestRun.started_at).getTime() : 0;
+			return bTime - aTime;
+		});
+		return result;
+	});
 
 	// Compute stats from current runs
 	const stats = derived(runs, ($runs) => {
@@ -22,6 +70,18 @@
 		const failed = $runs.filter((r) => r.passed === false).length;
 		return { running, passed, failed };
 	});
+
+	function toggleGroup(name: string) {
+		expandedGroups.update(set => {
+			const newSet = new Set(set);
+			if (newSet.has(name)) {
+				newSet.delete(name);
+			} else {
+				newSet.add(name);
+			}
+			return newSet;
+		});
+	}
 
 	function setFilter(status: RunStatus | null) {
 		statusFilter.set(status);
@@ -35,6 +95,46 @@
 	function formatDate(dateStr: string | undefined): string {
 		if (!dateStr) return '-';
 		return new Date(dateStr).toLocaleString();
+	}
+
+	async function rerunTest(run: RunSummary) {
+		try {
+			// Fetch full run details to get the spec
+			const detail = await api.getRun(run.id);
+			// Create new run with same spec
+			const response = await api.createRun({ spec: detail.spec });
+			// Navigate to the new run
+			goto(`/runs/${response.id}`);
+		} catch (e) {
+			console.error('Failed to rerun:', e);
+			alert('Failed to rerun test');
+		}
+	}
+
+	async function deleteTest(run: RunSummary) {
+		if (!confirm(`Delete "${run.name}"?`)) return;
+		try {
+			await api.deleteRun(run.id);
+			loadRuns();
+		} catch (e) {
+			console.error('Failed to delete:', e);
+			alert('Failed to delete test');
+		}
+	}
+
+	async function deleteAllInGroup(group: RunGroup) {
+		if (!confirm(`Delete all ${group.runs.length} runs of "${group.name}"?`)) return;
+		try {
+			for (const run of group.runs) {
+				if (run.status !== 'running') {
+					await api.deleteRun(run.id);
+				}
+			}
+			loadRuns();
+		} catch (e) {
+			console.error('Failed to delete:', e);
+			alert('Failed to delete tests');
+		}
 	}
 
 	onMount(() => {
@@ -76,6 +176,12 @@
 		</div>
 	</div>
 
+	<!-- Runs per Day Chart -->
+	<div class="card">
+		<h3 class="text-lg font-bold mb-4">Test Runs (Last 30 Days)</h3>
+		<RunsPerDayChart runs={$runs} />
+	</div>
+
 	<!-- Filters -->
 	<div class="card">
 		<div class="flex items-center gap-2 flex-wrap">
@@ -100,7 +206,7 @@
 		</div>
 	{/if}
 
-	<!-- Runs table -->
+	<!-- Runs table (grouped by name) -->
 	<div class="card overflow-x-auto">
 		{#if $runsLoading && $runs.length === 0}
 			<div class="text-center py-8 text-slate-400">Loading...</div>
@@ -113,59 +219,146 @@
 			<table class="w-full">
 				<thead>
 					<tr class="text-left text-slate-400 text-sm border-b border-slate-700">
+						<th class="pb-3 font-medium w-8"></th>
 						<th class="pb-3 font-medium">Name</th>
-						<th class="pb-3 font-medium">Status</th>
-						<th class="pb-3 font-medium">Progress</th>
-						<th class="pb-3 font-medium">Result</th>
-						<th class="pb-3 font-medium">Started</th>
+						<th class="pb-3 font-medium">Runs</th>
+						<th class="pb-3 font-medium">Latest Status</th>
+						<th class="pb-3 font-medium">Pass/Fail</th>
+						<th class="pb-3 font-medium">Last Run</th>
+						<th class="pb-3 font-medium">Actions</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-700">
-					{#each $runs as run}
-						<tr class="hover:bg-slate-700/50">
-							<td class="py-3">
-								<a href="/runs/{run.id}" class="text-blue-400 hover:underline font-medium">
-									{run.name}
-								</a>
-								<div class="text-xs text-slate-500 font-mono">{run.id.slice(0, 8)}...</div>
+					{#each $groupedRuns as group}
+						<!-- Group header row -->
+						<tr
+							class="hover:bg-slate-700/50 cursor-pointer"
+							role="button"
+							tabindex="0"
+							on:click={() => group.runs.length > 1 && toggleGroup(group.name)}
+							on:keydown={(e) => e.key === 'Enter' && group.runs.length > 1 && toggleGroup(group.name)}
+						>
+							<td class="py-3 text-center">
+								{#if group.runs.length > 1}
+									<span class="text-slate-400">
+										{$expandedGroups.has(group.name) ? '▼' : '▶'}
+									</span>
+								{/if}
 							</td>
 							<td class="py-3">
-								<span class="{getStatusClass(run.status)} font-medium capitalize">
-									{run.status}
+								<a
+									href="/runs/{group.latestRun.id}"
+									class="text-blue-400 hover:underline font-medium"
+									on:click|stopPropagation
+								>
+									{group.name}
+								</a>
+							</td>
+							<td class="py-3">
+								<span class="text-slate-300">{group.runs.length}</span>
+							</td>
+							<td class="py-3">
+								<span class="{getStatusClass(group.latestRun.status)} font-medium capitalize">
+									{group.latestRun.status}
 								</span>
 							</td>
 							<td class="py-3">
-								<div class="flex items-center gap-2">
-									<div class="w-24 bg-slate-700 rounded-full h-2">
-										<div
-											class="bg-blue-500 rounded-full h-2 transition-all"
-											style="width: {(run.requests_completed / run.total_requests) * 100}%"
-										></div>
-									</div>
-									<span class="text-sm text-slate-400">
-										{run.requests_completed}/{run.total_requests}
-									</span>
-								</div>
-							</td>
-							<td class="py-3">
-								{#if run.passed === true}
-									<span class="text-green-400 font-medium">PASS</span>
-								{:else if run.passed === false}
-									<span class="text-red-400 font-medium">FAIL</span>
-								{:else}
-									<span class="text-slate-500">-</span>
-								{/if}
+								<span class="text-green-400">{group.passCount}</span>
+								<span class="text-slate-500 mx-1">/</span>
+								<span class="text-red-400">{group.failCount}</span>
 							</td>
 							<td class="py-3 text-sm text-slate-400">
-								{formatDate(run.started_at)}
+								{formatDate(group.latestRun.started_at)}
+							</td>
+							<td class="py-3">
+								<!-- svelte-ignore a11y-no-static-element-interactions -->
+								<div class="flex items-center gap-2" on:click|stopPropagation on:keydown|stopPropagation>
+									{#if group.latestRun.status !== 'running' && group.latestRun.status !== 'pending'}
+										<button
+											on:click={() => rerunTest(group.latestRun)}
+											class="text-blue-400 hover:text-blue-300 text-sm"
+											title="Rerun this test"
+										>
+											↻
+										</button>
+										<a
+											href="/edit/{group.latestRun.id}"
+											class="text-yellow-400 hover:text-yellow-300 text-sm"
+											title="Edit test configuration"
+										>
+											✎
+										</a>
+										<button
+											on:click={() => deleteAllInGroup(group)}
+											class="text-red-400 hover:text-red-300 text-sm"
+											title="Delete all runs with this name"
+										>
+											✕
+										</button>
+									{/if}
+								</div>
 							</td>
 						</tr>
+						<!-- Expanded runs -->
+						{#if $expandedGroups.has(group.name)}
+							{#each group.runs as run, i}
+								<tr class="bg-slate-800/50 hover:bg-slate-700/50">
+									<td class="py-2"></td>
+									<td class="py-2 pl-4">
+										<a href="/runs/{run.id}" class="text-blue-400/80 hover:underline text-sm">
+											Run #{group.runs.length - i}
+										</a>
+										<span class="text-xs text-slate-500 font-mono ml-2">{run.id.slice(0, 8)}</span>
+									</td>
+									<td class="py-2"></td>
+									<td class="py-2">
+										<span class="{getStatusClass(run.status)} text-sm capitalize">
+											{run.status}
+										</span>
+									</td>
+									<td class="py-2">
+										{#if run.passed === true}
+											<span class="text-green-400 text-sm">PASS</span>
+										{:else if run.passed === false}
+											<span class="text-red-400 text-sm">FAIL</span>
+										{:else}
+											<span class="text-slate-500 text-sm">-</span>
+										{/if}
+									</td>
+									<td class="py-2 text-sm text-slate-400">
+										{formatDate(run.started_at)}
+									</td>
+									<td class="py-2">
+										<div class="flex items-center gap-2">
+											{#if run.status !== 'running' && run.status !== 'pending'}
+												<button
+													on:click={() => rerunTest(run)}
+													class="text-blue-400/80 hover:text-blue-300 text-xs"
+													title="Rerun"
+												>
+													↻
+												</button>
+											{/if}
+											{#if run.status !== 'running'}
+												<button
+													on:click={() => deleteTest(run)}
+													class="text-red-400/80 hover:text-red-300 text-xs"
+													title="Delete"
+												>
+													✕
+												</button>
+											{/if}
+										</div>
+									</td>
+								</tr>
+							{/each}
+						{/if}
 					{/each}
 				</tbody>
 			</table>
 
 			<div class="mt-4 pt-4 border-t border-slate-700 text-sm text-slate-400">
-				Showing {$runs.length} of {$runsTotal} runs
+				Showing {$groupedRuns.length} test groups ({$runs.length} total runs)
 			</div>
 		{/if}
 	</div>

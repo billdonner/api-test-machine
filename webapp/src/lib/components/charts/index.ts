@@ -3,3 +3,7 @@ export { default as PassFailGauge } from './PassFailGauge.svelte';
 export { default as SummaryStats } from './SummaryStats.svelte';
 export { default as LatencyChart } from './LatencyChart.svelte';
 export { default as ResponseTimeHistogram } from './ResponseTimeHistogram.svelte';
+export { default as RunsPerDayChart } from './RunsPerDayChart.svelte';
+export { default as SuccessRateChart } from './SuccessRateChart.svelte';
+export { default as StatusCodeChart } from './StatusCodeChart.svelte';
+export { default as LatencyScatterChart } from './LatencyScatterChart.svelte';

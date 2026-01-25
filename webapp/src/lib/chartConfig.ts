@@ -6,15 +6,32 @@ import {
 	Chart,
 	CategoryScale,
 	LinearScale,
+	BarController,
 	BarElement,
+	DoughnutController,
 	ArcElement,
+	ScatterController,
+	PointElement,
 	Tooltip,
 	Legend,
 	type ChartOptions
 } from 'chart.js';
 
-// Register required Chart.js components
-Chart.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
+// Only register Chart.js components in browser (not during SSR)
+if (typeof window !== 'undefined') {
+	Chart.register(
+		CategoryScale,
+		LinearScale,
+		BarController,
+		BarElement,
+		DoughnutController,
+		ArcElement,
+		ScatterController,
+		PointElement,
+		Tooltip,
+		Legend
+	);
+}
 
 // Re-export Chart for convenience
 export { Chart };

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import {
 		currentRun,
 		currentRunLoading,
@@ -11,11 +12,13 @@
 	import { api } from '$lib/api';
 	import SuccessRateChart from '$lib/components/charts/SuccessRateChart.svelte';
 	import LatencyChart from '$lib/components/charts/LatencyChart.svelte';
-	import StatusCodeChart from '$lib/components/charts/StatusCodeChart.svelte';
+	import LatencyScatterChart from '$lib/components/charts/LatencyScatterChart.svelte';
+	import RequestDetailViewer from '$lib/components/RequestDetailViewer.svelte';
 
 	$: runId = $page.params.id;
 
 	let cancelling = false;
+	let rerunning = false;
 
 	async function cancelRun() {
 		if (!$currentRun) return;
@@ -26,6 +29,19 @@
 			console.error('Failed to cancel:', e);
 		}
 		cancelling = false;
+	}
+
+	async function rerunTest() {
+		if (!$currentRun) return;
+		rerunning = true;
+		try {
+			const response = await api.createRun({ spec: $currentRun.spec });
+			goto(`/runs/${response.id}`);
+		} catch (e) {
+			console.error('Failed to rerun:', e);
+			alert('Failed to rerun test');
+		}
+		rerunning = false;
 	}
 
 	function formatDate(dateStr: string | undefined): string {
@@ -91,6 +107,14 @@
 							class="btn btn-danger"
 						>
 							{cancelling ? 'Cancelling...' : 'Cancel'}
+						</button>
+					{:else}
+						<button
+							on:click={rerunTest}
+							disabled={rerunning}
+							class="btn btn-primary"
+						>
+							{rerunning ? 'Starting...' : '↻ Rerun'}
 						</button>
 					{/if}
 				</div>
@@ -255,13 +279,20 @@
 				</div>
 			</div>
 
-			<!-- Status codes chart -->
-			{#if Object.keys(run.metrics.status_code_counts).length > 0}
+			<!-- Latency scatter chart -->
+			{#if run.sampled_requests && run.sampled_requests.length > 0}
 				<div class="card">
-					<h3 class="text-lg font-bold mb-4">Status Codes</h3>
-					<StatusCodeChart metrics={run.metrics} />
+					<h3 class="text-lg font-bold mb-4">Request Latencies</h3>
+					<LatencyScatterChart requests={run.sampled_requests} />
 				</div>
 			{/if}
+		{/if}
+
+		<!-- Request/Response Details -->
+		{#if run.sampled_requests && run.sampled_requests.length > 0}
+			<div class="card">
+				<RequestDetailViewer runId={run.id} requests={run.sampled_requests} />
+			</div>
 		{/if}
 
 		<!-- Test Configuration -->

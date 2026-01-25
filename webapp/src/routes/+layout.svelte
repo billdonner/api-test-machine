@@ -66,9 +66,10 @@
 		{#if showSettings}
 			<div class="container mx-auto px-4 py-4 border-t border-slate-700">
 				<div class="max-w-md">
-					<label class="label">API Key</label>
+					<label for="api-key-input" class="label">API Key</label>
 					<div class="flex gap-2">
 						<input
+							id="api-key-input"
 							type="password"
 							bind:value={keyInput}
 							placeholder="Enter API key..."
