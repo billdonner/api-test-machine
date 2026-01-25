@@ -48,6 +48,7 @@
 		loadingRequest = true;
 		showHtmlPreview = false;
 		showImagePreview = true;
+		showEmbeddedImages = true;
 		try {
 			selectedRequest = await api.getRequestDetail(runId, requestNumber);
 		} catch (e) {
@@ -129,8 +130,45 @@
 		return null;
 	}
 
+	// Image URL patterns to look for in JSON
+	const imageUrlPattern = /https?:\/\/[^\s"']+\.(?:jpg|jpeg|png|gif|webp|svg|bmp|ico)(?:\?[^\s"']*)?/gi;
+
+	function extractImageUrls(body: string | null): string[] {
+		if (!body) return [];
+		try {
+			// Try to parse as JSON and search recursively
+			const json = JSON.parse(body);
+			const urls: string[] = [];
+			findImageUrlsInObject(json, urls);
+			return [...new Set(urls)]; // Remove duplicates
+		} catch {
+			// If not valid JSON, search the raw string
+			const matches = body.match(imageUrlPattern);
+			return matches ? [...new Set(matches)] : [];
+		}
+	}
+
+	function findImageUrlsInObject(obj: unknown, urls: string[]): void {
+		if (typeof obj === 'string') {
+			// Check if this string is an image URL
+			if (imageUrlPattern.test(obj)) {
+				imageUrlPattern.lastIndex = 0; // Reset regex state
+				urls.push(obj);
+			}
+		} else if (Array.isArray(obj)) {
+			for (const item of obj) {
+				findImageUrlsInObject(item, urls);
+			}
+		} else if (obj && typeof obj === 'object') {
+			for (const value of Object.values(obj)) {
+				findImageUrlsInObject(value, urls);
+			}
+		}
+	}
+
 	let showHtmlPreview = false;
 	let showImagePreview = true;
+	let showEmbeddedImages = true;
 
 	onMount(() => {
 		startRunPolling(runId);
@@ -766,6 +804,7 @@
 
 						<!-- Response Body -->
 						{#if selectedRequest.response_body}
+							{@const embeddedImageUrls = extractImageUrls(selectedRequest.response_body)}
 							<div>
 								<div class="flex items-center justify-between mb-1">
 									<span class="text-slate-400 text-xs">Body</span>
@@ -786,6 +825,16 @@
 												class="text-xs text-blue-400 hover:text-blue-300"
 											>
 												{showHtmlPreview ? 'Show Raw' : 'Show HTML Preview'}
+											</button>
+										{:else if embeddedImageUrls.length > 0}
+											<span class="text-xs text-purple-400 bg-purple-900/30 px-2 py-0.5 rounded">
+												{embeddedImageUrls.length} image{embeddedImageUrls.length > 1 ? 's' : ''} found
+											</span>
+											<button
+												on:click={() => showEmbeddedImages = !showEmbeddedImages}
+												class="text-xs text-blue-400 hover:text-blue-300"
+											>
+												{showEmbeddedImages ? 'Hide Images' : 'Show Images'}
 											</button>
 										{/if}
 									</div>
@@ -831,6 +880,35 @@
 										></iframe>
 									</div>
 								{:else}
+									<!-- Show embedded images if found -->
+									{#if embeddedImageUrls.length > 0 && showEmbeddedImages}
+										<div class="bg-slate-900 rounded p-3 mb-2">
+											<div class="text-xs text-slate-400 mb-2">Embedded Images:</div>
+											<div class="flex flex-wrap gap-3">
+												{#each embeddedImageUrls as imageUrl}
+													<div class="flex flex-col items-center gap-1">
+														<a href={imageUrl} target="_blank" rel="noopener noreferrer" class="block">
+															<img
+																src={imageUrl}
+																alt="Embedded image"
+																class="max-w-48 max-h-48 rounded border border-slate-700 hover:border-blue-500 transition-colors"
+																on:error={(e) => e.currentTarget.parentElement?.parentElement?.remove()}
+															/>
+														</a>
+														<a
+															href={imageUrl}
+															target="_blank"
+															rel="noopener noreferrer"
+															class="text-xs text-blue-400 hover:text-blue-300 truncate max-w-48"
+															title={imageUrl}
+														>
+															{imageUrl.split('/').pop()?.split('?')[0] || 'image'}
+														</a>
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/if}
 									<pre class="bg-slate-900 rounded p-2 font-mono text-xs overflow-x-auto max-h-80 overflow-y-auto text-cyan-400 whitespace-pre-wrap">{formatJson(selectedRequest.response_body)}</pre>
 								{/if}
 							</div>
