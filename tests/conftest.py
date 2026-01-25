@@ -37,15 +37,17 @@ async def async_client(temp_data_dir: Path) -> AsyncGenerator[httpx.AsyncClient,
     """Create an async HTTP client for testing with proper lifespan handling."""
     from api.app import create_app
     from api.routes import init_dependencies
-    from api.storage import RunStorage
+    from api.storage_base import AsyncJSONStorage
     from engine.executor import TestExecutor
 
     # Create app
     app = create_app()
 
     # Manually initialize dependencies (simulating lifespan)
+    # Use JSON storage for tests (simpler, no database setup)
     executor = TestExecutor()
-    storage = RunStorage(data_dir=temp_data_dir)
+    storage = AsyncJSONStorage(data_dir=temp_data_dir)
+    await storage.init()
     init_dependencies(executor, storage)
 
     async with httpx.AsyncClient(
@@ -57,6 +59,7 @@ async def async_client(temp_data_dir: Path) -> AsyncGenerator[httpx.AsyncClient,
     # Cleanup
     for run in executor.get_active_runs():
         executor.cancel(run.id)
+    await storage.close()
 
 
 @pytest.fixture

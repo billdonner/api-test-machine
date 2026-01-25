@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import health_router, init_dependencies, runs_router
-from api.storage import RunStorage
+from api.storage_base import create_storage
 from engine.executor import TestExecutor
 
 
@@ -19,7 +19,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Initialize dependencies
     executor = TestExecutor()
-    storage = RunStorage()
+    storage = create_storage()
+
+    # Initialize storage (creates tables if needed)
+    await storage.init()
+
     init_dependencies(executor, storage)
 
     yield
@@ -27,6 +31,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Cleanup (cancel any active runs)
     for run in executor.get_active_runs():
         executor.cancel(run.id)
+
+    # Close storage connections
+    await storage.close()
 
 
 def create_app() -> FastAPI:

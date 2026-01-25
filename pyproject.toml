@@ -21,15 +21,20 @@ dependencies = [
     "rich>=13.0",
     "apscheduler>=3.10",
     "mcp>=1.0",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.19",
+    "greenlet>=3.0",
 ]
 
 [project.optional-dependencies]
 auth = ["PyJWT>=2.8"]
+postgres = ["asyncpg>=0.29"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=4.0",
     "httpx[http2]>=0.27",
+    "alembic>=1.13",
 ]
 
 [project.scripts]

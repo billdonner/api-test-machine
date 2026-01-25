@@ -19,7 +19,7 @@ from api.models import (
     RunListResponse,
     RunSummary,
 )
-from api.storage import RunStorage
+from api.storage_base import StorageInterface
 from engine.executor import TestExecutor
 from engine.models import RunResult, RunStatus
 
@@ -29,7 +29,7 @@ runs_router = APIRouter(prefix="/runs", tags=["runs"])
 
 # Shared state (initialized in app lifespan)
 executor: TestExecutor | None = None
-storage: RunStorage | None = None
+storage: StorageInterface | None = None
 
 
 def get_executor() -> TestExecutor:
@@ -39,19 +39,19 @@ def get_executor() -> TestExecutor:
     return executor
 
 
-def get_storage() -> RunStorage:
+def get_storage() -> StorageInterface:
     """Get the storage instance."""
     if storage is None:
         raise RuntimeError("Storage not initialized")
     return storage
 
 
-def init_dependencies(exec: TestExecutor, store: RunStorage) -> None:
+def init_dependencies(exec: TestExecutor, store: StorageInterface) -> None:
     """Initialize shared dependencies.
 
     Args:
         exec: TestExecutor instance
-        store: RunStorage instance
+        store: Storage instance (SQLite or JSON)
     """
     global executor, storage
     executor = exec
@@ -87,18 +87,18 @@ async def create_run(
     result = RunResult(spec=request.spec, status=RunStatus.PENDING)
 
     # Save initial state
-    store.save(result)
+    await store.save(result)
 
     # Define background task
     async def run_test():
         try:
             final_result = await exec.run(request.spec, run_id=result.id)
-            store.save(final_result)
+            await store.save(final_result)
         except Exception as e:
             # Update with failure
             result.status = RunStatus.FAILED
             result.error_message = str(e)
-            store.save(result)
+            await store.save(result)
 
     # Schedule background execution (fire and forget)
     asyncio.create_task(run_test())
@@ -123,7 +123,7 @@ async def list_runs(
 ) -> RunListResponse:
     """List recent test runs."""
     store = get_storage()
-    runs, total = store.list_runs(limit=limit, offset=offset, status_filter=status_filter)
+    runs, total = await store.list_runs(limit=limit, offset=offset, status_filter=status_filter)
 
     summaries = [
         RunSummary(
@@ -187,7 +187,7 @@ async def get_run(
         )
 
     # Load from storage
-    result = store.load(run_id)
+    result = await store.load(run_id)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -248,7 +248,7 @@ async def cancel_run(
         )
 
     # Check if run exists but is not active
-    result = store.load(run_id)
+    result = await store.load(run_id)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -291,7 +291,7 @@ async def get_request_detail(
     if active:
         sampled_requests = active.sampled_requests
     else:
-        result = store.load(run_id)
+        result = await store.load(run_id)
         if result is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -351,7 +351,7 @@ async def delete_run(
         )
 
     # Try to delete from storage
-    deleted = store.delete(run_id)
+    deleted = await store.delete(run_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
