@@ -1,0 +1,19 @@
+{
+  "name": "HTTPBin GET Test",
+  "description": "Sample load test against httpbin.org",
+  "url": "https://httpbin.org/get",
+  "method": "GET",
+  "headers": {
+    "User-Agent": "API-Test-Machine/0.1.0"
+  },
+  "total_requests": 50,
+  "concurrency": 5,
+  "requests_per_second": 10,
+  "timeout_seconds": 30,
+  "thresholds": {
+    "max_latency_p95_ms": 1000,
+    "max_error_rate": 0.05
+  },
+  "expected_status_codes": [200],
+  "variables": {}
+}

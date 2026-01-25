@@ -1,0 +1,129 @@
+"""Pydantic models for the test engine."""
+
+from datetime import datetime
+from enum import Enum
+from typing import Any
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field, HttpUrl
+
+
+class HttpMethod(str, Enum):
+    """Supported HTTP methods."""
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+    HEAD = "HEAD"
+    OPTIONS = "OPTIONS"
+
+
+class RunStatus(str, Enum):
+    """Test run status."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class Thresholds(BaseModel):
+    """Pass/fail thresholds for test metrics."""
+    max_latency_p50_ms: float | None = None
+    max_latency_p95_ms: float | None = None
+    max_latency_p99_ms: float | None = None
+    max_error_rate: float | None = Field(None, ge=0.0, le=1.0)
+    min_throughput_rps: float | None = None
+
+
+class TestSpec(BaseModel):
+    """Specification for a load test."""
+    name: str = Field(..., min_length=1, max_length=256)
+    description: str | None = None
+
+    # Target configuration
+    url: str = Field(..., description="Target URL (supports template variables)")
+    method: HttpMethod = HttpMethod.GET
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | dict[str, Any] | None = None
+
+    # Load configuration
+    total_requests: int = Field(default=100, ge=1, le=1_000_000)
+    concurrency: int = Field(default=10, ge=1, le=1000)
+    requests_per_second: float | None = Field(None, ge=0.1, le=10000)
+
+    # Timing
+    timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+
+    # Success criteria
+    thresholds: Thresholds = Field(default_factory=Thresholds)
+    expected_status_codes: list[int] = Field(default_factory=lambda: [200, 201, 204])
+
+    # Template variables (user-provided values)
+    variables: dict[str, str] = Field(default_factory=dict)
+
+
+class RequestResult(BaseModel):
+    """Result of a single HTTP request."""
+    request_number: int
+    status_code: int | None = None
+    latency_ms: float
+    error: str | None = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    response_size_bytes: int | None = None
+
+
+class Metrics(BaseModel):
+    """Aggregated metrics for a test run."""
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+
+    # Latency percentiles (milliseconds)
+    latency_min_ms: float | None = None
+    latency_max_ms: float | None = None
+    latency_mean_ms: float | None = None
+    latency_p50_ms: float | None = None
+    latency_p90_ms: float | None = None
+    latency_p95_ms: float | None = None
+    latency_p99_ms: float | None = None
+
+    # Throughput
+    requests_per_second: float | None = None
+    duration_seconds: float | None = None
+
+    # Error breakdown
+    error_rate: float | None = None
+    errors_by_type: dict[str, int] = Field(default_factory=dict)
+    status_code_counts: dict[int, int] = Field(default_factory=dict)
+
+    # Data transfer
+    total_bytes_received: int = 0
+
+
+class RunResult(BaseModel):
+    """Complete result of a test run."""
+    id: UUID = Field(default_factory=uuid4)
+    spec: TestSpec
+    status: RunStatus = RunStatus.PENDING
+
+    # Timing
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    # Results
+    metrics: Metrics = Field(default_factory=Metrics)
+    passed: bool | None = None
+    failure_reasons: list[str] = Field(default_factory=list)
+
+    # Progress
+    requests_completed: int = 0
+
+    # Error message if status is FAILED
+    error_message: str | None = None
+
+    def model_post_init(self, __context: Any) -> None:
+        """Ensure id is always set."""
+        if self.id is None:
+            self.id = uuid4()
