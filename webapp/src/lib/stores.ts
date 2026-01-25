@@ -6,19 +6,22 @@ import { writable, derived, type Readable } from 'svelte/store';
 import { api } from './api';
 import type { RunSummary, RunDetail, RunStatus } from './types';
 
+// Browser check helper
+const isBrowser = typeof window !== 'undefined';
+
 // API key store
 export const apiKey = writable<string | null>(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('atm_api_key') : null
+	isBrowser ? window.localStorage.getItem('atm_api_key') : null
 );
 
 // Update API client when key changes
 apiKey.subscribe((key) => {
 	api.setApiKey(key);
-	if (typeof localStorage !== 'undefined') {
+	if (isBrowser) {
 		if (key) {
-			localStorage.setItem('atm_api_key', key);
+			window.localStorage.setItem('atm_api_key', key);
 		} else {
-			localStorage.removeItem('atm_api_key');
+			window.localStorage.removeItem('atm_api_key');
 		}
 	}
 });

@@ -208,7 +208,7 @@
 				<textarea
 					id="headers"
 					bind:value={headersText}
-					placeholder='{"Authorization": "Bearer token"}'
+					placeholder={'{"Authorization": "Bearer token"}'}
 					class="input w-full h-24 font-mono text-sm"
 				></textarea>
 			</div>
@@ -218,7 +218,7 @@
 				<textarea
 					id="body"
 					bind:value={bodyText}
-					placeholder='{"key": "value"}'
+					placeholder={'{"key": "value"}'}
 					class="input w-full h-32 font-mono text-sm"
 				></textarea>
 			</div>
