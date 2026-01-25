@@ -42,4 +42,4 @@ markers = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["engine", "api", "agent", "cli", "mcp"]
+packages = ["engine", "api", "agent", "cli", "mcp_server"]
