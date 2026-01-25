@@ -47,6 +47,7 @@
 		if (!runId) return;
 		loadingRequest = true;
 		showHtmlPreview = false;
+		showImagePreview = true;
 		try {
 			selectedRequest = await api.getRequestDetail(runId, requestNumber);
 		} catch (e) {
@@ -96,7 +97,40 @@
 		return trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html') || trimmed.startsWith('<!doctype');
 	}
 
+	function isImageContent(headers: Record<string, string> | null): boolean {
+		if (!headers) return false;
+		const contentType = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+		return contentType.startsWith('image/');
+	}
+
+	function getImageType(headers: Record<string, string> | null): string {
+		if (!headers) return 'image';
+		const contentType = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
+		// Extract type like 'png' from 'image/png'
+		const match = contentType.match(/image\/(\w+)/);
+		return match ? match[1].toUpperCase() : 'Image';
+	}
+
+	function isBase64Image(body: string | null): boolean {
+		if (!body) return false;
+		// Check if it's a base64 data URL or raw base64 image data
+		return body.startsWith('data:image/') || /^[A-Za-z0-9+/=]{100,}$/.test(body.trim());
+	}
+
+	function getImageDataUrl(body: string | null, headers: Record<string, string> | null): string | null {
+		if (!body) return null;
+		// Already a data URL
+		if (body.startsWith('data:image/')) return body;
+		// Try to construct data URL from base64 body
+		const contentType = headers ? Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] : 'image/png';
+		if (/^[A-Za-z0-9+/=]{100,}$/.test(body.trim())) {
+			return `data:${contentType};base64,${body.trim()}`;
+		}
+		return null;
+	}
+
 	let showHtmlPreview = false;
+	let showImagePreview = true;
 
 	onMount(() => {
 		startRunPolling(runId);
@@ -735,16 +769,59 @@
 							<div>
 								<div class="flex items-center justify-between mb-1">
 									<span class="text-slate-400 text-xs">Body</span>
-									{#if isHtmlContent(selectedRequest.response_body, selectedRequest.response_headers)}
-										<button
-											on:click={() => showHtmlPreview = !showHtmlPreview}
-											class="text-xs text-blue-400 hover:text-blue-300"
-										>
-											{showHtmlPreview ? 'Show Raw' : 'Show HTML Preview'}
-										</button>
-									{/if}
+									<div class="flex gap-2">
+										{#if isImageContent(selectedRequest.response_headers)}
+											<span class="text-xs text-purple-400 bg-purple-900/30 px-2 py-0.5 rounded">
+												{getImageType(selectedRequest.response_headers)}
+											</span>
+											<button
+												on:click={() => showImagePreview = !showImagePreview}
+												class="text-xs text-blue-400 hover:text-blue-300"
+											>
+												{showImagePreview ? 'Hide Preview' : 'Show Preview'}
+											</button>
+										{:else if isHtmlContent(selectedRequest.response_body, selectedRequest.response_headers)}
+											<button
+												on:click={() => showHtmlPreview = !showHtmlPreview}
+												class="text-xs text-blue-400 hover:text-blue-300"
+											>
+												{showHtmlPreview ? 'Show Raw' : 'Show HTML Preview'}
+											</button>
+										{/if}
+									</div>
 								</div>
-								{#if isHtmlContent(selectedRequest.response_body, selectedRequest.response_headers) && showHtmlPreview}
+								{#if isImageContent(selectedRequest.response_headers) && showImagePreview}
+									<div class="bg-slate-900 rounded p-4 flex flex-col items-center gap-3">
+										{#if isBase64Image(selectedRequest.response_body)}
+											<!-- Display base64 encoded image -->
+											<img
+												src={getImageDataUrl(selectedRequest.response_body, selectedRequest.response_headers)}
+												alt="Response image"
+												class="max-w-full max-h-80 rounded border border-slate-700"
+											/>
+										{:else if selectedRequest.request_url && selectedRequest.request_method === 'GET'}
+											<!-- For GET requests, try loading from original URL -->
+											<img
+												src={selectedRequest.request_url}
+												alt="Response image"
+												class="max-w-full max-h-80 rounded border border-slate-700"
+												on:error={(e) => e.currentTarget.style.display = 'none'}
+											/>
+											<div class="text-xs text-slate-500">
+												Loading from: {selectedRequest.request_url}
+											</div>
+										{:else}
+											<div class="text-slate-400 text-sm">
+												Image response ({selectedRequest.response_body})
+											</div>
+										{/if}
+										{#if selectedRequest.response_size_bytes}
+											<div class="text-xs text-slate-500">
+												Size: {formatBytes(selectedRequest.response_size_bytes)}
+											</div>
+										{/if}
+									</div>
+								{:else if isHtmlContent(selectedRequest.response_body, selectedRequest.response_headers) && showHtmlPreview}
 									<div class="bg-white rounded overflow-hidden">
 										<iframe
 											srcdoc={selectedRequest.response_body}
@@ -756,6 +833,38 @@
 								{:else}
 									<pre class="bg-slate-900 rounded p-2 font-mono text-xs overflow-x-auto max-h-80 overflow-y-auto text-cyan-400 whitespace-pre-wrap">{formatJson(selectedRequest.response_body)}</pre>
 								{/if}
+							</div>
+						{:else if isImageContent(selectedRequest.response_headers)}
+							<!-- Image without captured body - try to load from URL -->
+							<div>
+								<div class="flex items-center justify-between mb-1">
+									<span class="text-slate-400 text-xs">Body</span>
+									<span class="text-xs text-purple-400 bg-purple-900/30 px-2 py-0.5 rounded">
+										{getImageType(selectedRequest.response_headers)}
+									</span>
+								</div>
+								<div class="bg-slate-900 rounded p-4 flex flex-col items-center gap-3">
+									{#if selectedRequest.request_url && selectedRequest.request_method === 'GET'}
+										<img
+											src={selectedRequest.request_url}
+											alt="Response image"
+											class="max-w-full max-h-80 rounded border border-slate-700"
+											on:error={(e) => e.currentTarget.style.display = 'none'}
+										/>
+										<div class="text-xs text-slate-500">
+											Loading from: {selectedRequest.request_url}
+										</div>
+									{:else}
+										<div class="text-slate-400 text-sm italic">
+											Image response (binary data not captured)
+										</div>
+									{/if}
+									{#if selectedRequest.response_size_bytes}
+										<div class="text-xs text-slate-500">
+											Size: {formatBytes(selectedRequest.response_size_bytes)}
+										</div>
+									{/if}
+								</div>
 							</div>
 						{:else}
 							<div class="text-slate-500 text-sm italic">No response body captured</div>
