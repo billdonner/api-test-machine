@@ -5,9 +5,12 @@ A REST API load testing system with multiple interfaces (CLI, MCP, WebApp) built
 ## Features
 
 - **Async Test Engine**: High-performance HTTP load testing with httpx
+- **Multi-Endpoint Testing**: Test multiple URLs in a single run with distribution strategies
 - **Rate Limiting**: Token bucket algorithm for controlled request rates
 - **Template Variables**: Dynamic URL and body substitution (`{{uuid}}`, `{{timestamp}}`, etc.)
+- **Authentication**: Bearer tokens, API keys, and Basic auth support
 - **Metrics**: Latency percentiles (P50/P90/P95/P99), throughput, error rates
+- **Per-Endpoint Metrics**: Individual metrics for each endpoint in multi-endpoint tests
 - **Thresholds**: Pass/fail criteria based on latency and error rates
 - **Multiple Interfaces**:
   - REST API for programmatic access
@@ -29,7 +32,7 @@ pip install -e ".[dev]"
 ### Start the API Server
 
 ```bash
-uvicorn api.app:app --reload
+uvicorn api.main:app --reload
 ```
 
 ### Run a Test via CLI
@@ -66,6 +69,48 @@ npm run dev
 
 Open http://localhost:5173
 
+## Multi-Endpoint Testing
+
+Test multiple endpoints in a single run with different distribution strategies:
+
+```json
+{
+  "name": "Stock API Test",
+  "endpoints": [
+    {"name": "AAPL", "url": "https://api.example.com/stock/AAPL", "weight": 1},
+    {"name": "GOOGL", "url": "https://api.example.com/stock/GOOGL", "weight": 1},
+    {"name": "MSFT", "url": "https://api.example.com/stock/MSFT", "weight": 1}
+  ],
+  "distribution_strategy": "round_robin",
+  "total_requests": 300,
+  "concurrency": 10
+}
+```
+
+### Distribution Strategies
+
+| Strategy | Behavior |
+|----------|----------|
+| `round_robin` | Requests cycle through endpoints: A, B, C, A, B, C... |
+| `weighted` | Distribute based on weights (e.g., 3:1 = ~75%:25%) |
+| `sequential` | All requests to A, then all to B, then C |
+
+### Endpoint Configuration
+
+Each endpoint supports:
+
+```json
+{
+  "name": "Create User",
+  "url": "https://api.example.com/users",
+  "method": "POST",
+  "headers": {"Content-Type": "application/json"},
+  "body": {"name": "test"},
+  "weight": 2,
+  "expected_status_codes": [201]
+}
+```
+
 ## CLI Commands
 
 ```bash
@@ -91,8 +136,11 @@ atm list --limit 10 --status completed
 | GET | `/api/v1/runs` | Yes | List recent runs |
 | GET | `/api/v1/runs/{id}` | Yes | Get run status/metrics |
 | POST | `/api/v1/runs/{id}/cancel` | Yes | Cancel running test |
+| DELETE | `/api/v1/runs/{id}` | Yes | Delete a run |
 
 ## Test Specification
+
+### Single Endpoint (Legacy)
 
 ```json
 {
@@ -126,6 +174,31 @@ atm list --limit 10 --status completed
 }
 ```
 
+### Multi-Endpoint
+
+```json
+{
+  "name": "API Suite Test",
+  "endpoints": [
+    {
+      "name": "Get Users",
+      "url": "https://api.example.com/users",
+      "method": "GET"
+    },
+    {
+      "name": "Create User",
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "body": {"name": "test"},
+      "weight": 2
+    }
+  ],
+  "distribution_strategy": "weighted",
+  "total_requests": 1000,
+  "concurrency": 50
+}
+```
+
 ## Template Variables
 
 | Variable | Description |
@@ -150,18 +223,20 @@ atm list --limit 10 --status completed
 
 ## MCP Server
 
-The MCP server provides tools for LLM agents:
+The MCP server provides tools for LLM agents. See [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md) for details.
 
 ```bash
-python -m mcp.server
+python -m mcp_server.server
 ```
 
 Available tools:
 - `run_api_test` - Execute a load test
 - `get_test_status` - Get run status by ID
+- `get_test_results` - Get detailed results
 - `cancel_test` - Cancel a running test
 - `list_recent_tests` - List recent runs
 - `create_test_spec` - Generate test spec JSON
+- `rerun_test` - Re-run a test by name
 
 ## Agent Scheduler
 
@@ -184,6 +259,9 @@ pytest --cov=. --cov-report=html
 
 # Specific module
 pytest tests/engine/
+
+# Multi-endpoint tests
+pytest tests/engine/test_multi_endpoint.py -v
 ```
 
 ### Project Structure
@@ -191,14 +269,25 @@ pytest tests/engine/
 ```
 api-test-machine/
 ├── engine/          # Core async test engine
+│   ├── models.py    # Pydantic models (TestSpec, EndpointSpec, etc.)
+│   ├── executor.py  # Request execution and distribution
+│   ├── metrics.py   # Metrics collection and aggregation
+│   ├── auth.py      # Authentication providers
+│   └── templating.py # Variable substitution
 ├── api/             # FastAPI Control API
 ├── cli/             # Typer CLI
 ├── agent/           # Scheduler and orchestration
-├── mcp/             # MCP server for LLM agents
+├── mcp_server/      # MCP server for LLM agents
 ├── webapp/          # SvelteKit dashboard
 ├── tests/           # Test suite
+├── docs/            # Documentation
 └── data/            # Runtime data (gitignored)
 ```
+
+## Documentation
+
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [MCP User Guide](docs/MCP_GUIDE.md)
 
 ## License
 
