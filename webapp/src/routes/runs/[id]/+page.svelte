@@ -286,6 +286,66 @@
 					<LatencyScatterChart requests={run.sampled_requests} />
 				</div>
 			{/if}
+
+			<!-- Per-endpoint metrics (for multi-endpoint tests) -->
+			{#if run.endpoint_metrics && run.endpoint_metrics.length > 0}
+				<details class="card" open>
+					<summary class="text-lg font-bold cursor-pointer mb-4">
+						Per-Endpoint Metrics ({run.endpoint_metrics.length} endpoints)
+					</summary>
+					<div class="space-y-4 mt-4">
+						{#each run.endpoint_metrics as epMetrics}
+							<div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+								<h4 class="font-medium text-blue-400 mb-3">{epMetrics.endpoint_name}</h4>
+								<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+									<div>
+										<div class="text-slate-400 text-xs">Requests</div>
+										<div>{epMetrics.metrics.total_requests}</div>
+									</div>
+									<div>
+										<div class="text-slate-400 text-xs">Success</div>
+										<div class="text-green-400">{epMetrics.metrics.successful_requests}</div>
+									</div>
+									<div>
+										<div class="text-slate-400 text-xs">Failed</div>
+										<div class="text-red-400">{epMetrics.metrics.failed_requests}</div>
+									</div>
+									<div>
+										<div class="text-slate-400 text-xs">Error Rate</div>
+										<div class="{(epMetrics.metrics.error_rate || 0) > 0.01 ? 'text-red-400' : 'text-green-400'}">
+											{((epMetrics.metrics.error_rate || 0) * 100).toFixed(2)}%
+										</div>
+									</div>
+									{#if epMetrics.metrics.latency_p50_ms}
+										<div>
+											<div class="text-slate-400 text-xs">P50</div>
+											<div>{epMetrics.metrics.latency_p50_ms.toFixed(1)}ms</div>
+										</div>
+									{/if}
+									{#if epMetrics.metrics.latency_p95_ms}
+										<div>
+											<div class="text-slate-400 text-xs">P95</div>
+											<div>{epMetrics.metrics.latency_p95_ms.toFixed(1)}ms</div>
+										</div>
+									{/if}
+									{#if epMetrics.metrics.latency_p99_ms}
+										<div>
+											<div class="text-slate-400 text-xs">P99</div>
+											<div>{epMetrics.metrics.latency_p99_ms.toFixed(1)}ms</div>
+										</div>
+									{/if}
+									{#if epMetrics.metrics.requests_per_second}
+										<div>
+											<div class="text-slate-400 text-xs">Throughput</div>
+											<div>{epMetrics.metrics.requests_per_second.toFixed(1)} req/s</div>
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</details>
+			{/if}
 		{/if}
 
 		<!-- Request/Response Details -->
@@ -299,14 +359,40 @@
 		<div class="card">
 			<h3 class="text-lg font-bold mb-4">Test Configuration</h3>
 			<div class="grid md:grid-cols-2 gap-4 text-sm">
-				<div>
-					<span class="text-slate-400">URL:</span>
-					<span class="ml-2 font-mono">{run.spec.url}</span>
-				</div>
-				<div>
-					<span class="text-slate-400">Method:</span>
-					<span class="ml-2">{run.spec.method}</span>
-				</div>
+				{#if run.spec.endpoints && run.spec.endpoints.length > 0}
+					<!-- Multi-endpoint configuration -->
+					<div class="md:col-span-2">
+						<span class="text-slate-400">Mode:</span>
+						<span class="ml-2 text-blue-400">Multi-endpoint</span>
+						<span class="ml-2 text-slate-500">({run.spec.distribution_strategy || 'round_robin'})</span>
+					</div>
+					<div class="md:col-span-2">
+						<span class="text-slate-400 block mb-2">Endpoints:</span>
+						<div class="space-y-2 pl-4">
+							{#each run.spec.endpoints as ep}
+								<div class="font-mono text-xs bg-slate-800/50 rounded p-2">
+									<span class="text-blue-400">{ep.name}</span>
+									<span class="text-slate-500 mx-2">|</span>
+									<span class="text-yellow-400">{ep.method}</span>
+									<span class="text-slate-400 ml-2">{ep.url}</span>
+									{#if ep.weight > 1}
+										<span class="text-slate-500 ml-2">(weight: {ep.weight})</span>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</div>
+				{:else}
+					<!-- Single endpoint configuration -->
+					<div>
+						<span class="text-slate-400">URL:</span>
+						<span class="ml-2 font-mono">{run.spec.url}</span>
+					</div>
+					<div>
+						<span class="text-slate-400">Method:</span>
+						<span class="ml-2">{run.spec.method}</span>
+					</div>
+				{/if}
 				<div>
 					<span class="text-slate-400">Total Requests:</span>
 					<span class="ml-2">{run.spec.total_requests}</span>

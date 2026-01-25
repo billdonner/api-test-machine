@@ -1,7 +1,9 @@
 """Async test executor with cancellation support."""
 
 import asyncio
+import itertools
 import json
+import random
 import time
 from datetime import datetime
 from typing import Any, Callable
@@ -10,8 +12,10 @@ from uuid import UUID
 import httpx
 
 from engine.auth import AuthProvider
-from engine.metrics import MetricsCollector
+from engine.metrics import EndpointMetricsCollector, MetricsCollector
 from engine.models import (
+    DistributionStrategy,
+    EndpointSpec,
     HttpMethod,
     Metrics,
     RequestResult,
@@ -21,6 +25,82 @@ from engine.models import (
 )
 from engine.rate_limiter import NoopRateLimiter, TokenBucketRateLimiter
 from engine.templating import TemplateEngine
+
+
+class EndpointSelector:
+    """Selects endpoints based on distribution strategy.
+
+    Supports three strategies:
+    - round_robin: Cycle through endpoints A, B, C, A, B, C...
+    - weighted: Distribute based on weights (e.g., 3:1 = ~75%:25%)
+    - sequential: All requests to A, then all to B, then C
+    """
+
+    def __init__(
+        self,
+        endpoints: list[EndpointSpec],
+        strategy: DistributionStrategy,
+        total_requests: int,
+    ):
+        """Initialize the endpoint selector.
+
+        Args:
+            endpoints: List of endpoints to distribute across
+            strategy: Distribution strategy to use
+            total_requests: Total number of requests (for sequential strategy)
+        """
+        self._endpoints = endpoints
+        self._strategy = strategy
+        self._total_requests = total_requests
+
+        # For round robin
+        self._rr_iterator = itertools.cycle(endpoints)
+
+        # For weighted - build a weighted list
+        self._weighted_list: list[EndpointSpec] = []
+        for ep in endpoints:
+            self._weighted_list.extend([ep] * ep.weight)
+
+        # For sequential - precompute request ranges
+        self._sequential_ranges: list[tuple[int, int, EndpointSpec]] = []
+        if strategy == DistributionStrategy.SEQUENTIAL and len(endpoints) > 0:
+            requests_per_endpoint = total_requests // len(endpoints)
+            remainder = total_requests % len(endpoints)
+            current = 0
+            for i, ep in enumerate(endpoints):
+                # Distribute remainder to first endpoints
+                extra = 1 if i < remainder else 0
+                count = requests_per_endpoint + extra
+                self._sequential_ranges.append((current, current + count, ep))
+                current += count
+
+    def select(self, request_num: int) -> EndpointSpec:
+        """Select an endpoint for the given request number.
+
+        Args:
+            request_num: 1-indexed request number
+
+        Returns:
+            The selected EndpointSpec
+        """
+        if len(self._endpoints) == 1:
+            return self._endpoints[0]
+
+        if self._strategy == DistributionStrategy.ROUND_ROBIN:
+            return next(self._rr_iterator)
+
+        elif self._strategy == DistributionStrategy.WEIGHTED:
+            return random.choice(self._weighted_list)
+
+        elif self._strategy == DistributionStrategy.SEQUENTIAL:
+            # Find the endpoint for this request number
+            for start, end, ep in self._sequential_ranges:
+                if start < request_num <= end:
+                    return ep
+            # Fallback to last endpoint
+            return self._endpoints[-1]
+
+        return self._endpoints[0]
 
 
 class TestExecutor:
@@ -91,14 +171,27 @@ class TestExecutor:
             # Set up template engine
             template_engine = TemplateEngine(variables=spec.variables)
 
-            # Set up auth headers
+            # Set up auth headers (global auth applies to all endpoints)
             auth_headers: dict[str, str] = {}
             if spec.auth:
                 auth_provider = AuthProvider(template_engine=template_engine)
                 auth_headers = await auth_provider.get_headers(spec.auth)
 
-            # Set up metrics collector
-            metrics_collector = MetricsCollector()
+            # Get endpoints and set up endpoint selector
+            endpoints = spec.get_endpoints()
+            endpoint_selector = EndpointSelector(
+                endpoints=endpoints,
+                strategy=spec.distribution_strategy,
+                total_requests=spec.total_requests,
+            )
+            is_multi_endpoint = spec.is_multi_endpoint()
+
+            # Set up metrics collector (use endpoint-aware collector for multi-endpoint)
+            if is_multi_endpoint:
+                endpoint_names = [ep.name for ep in endpoints]
+                metrics_collector = EndpointMetricsCollector(endpoint_names)
+            else:
+                metrics_collector = MetricsCollector()
             metrics_collector.start()
 
             # Create or use provided HTTP client
@@ -126,12 +219,17 @@ class TestExecutor:
                 async def execute_request(request_num: int) -> RequestResult:
                     nonlocal completed
 
+                    # Select endpoint for this request
+                    endpoint = endpoint_selector.select(request_num)
+                    endpoint_name = endpoint.name if is_multi_endpoint else None
+
                     # Check for cancellation
                     if cancel_event.is_set():
                         cancelled_result = RequestResult(
                             request_number=request_num,
                             latency_ms=0,
                             error="cancelled",
+                            endpoint_name=endpoint_name,
                         )
                         metrics_collector.add_result(cancelled_result)
                         return cancelled_result
@@ -146,33 +244,35 @@ class TestExecutor:
                                 request_number=request_num,
                                 latency_ms=0,
                                 error="cancelled",
+                                endpoint_name=endpoint_name,
                             )
                             metrics_collector.add_result(cancelled_result)
                             return cancelled_result
 
-                        # Build request
-                        url = template_engine.substitute(spec.url, request_num)
+                        # Build request from endpoint config
+                        url = template_engine.substitute(endpoint.url, request_num)
                         headers = {**auth_headers}
+                        # Merge endpoint-specific headers
                         headers.update(
-                            template_engine.substitute_dict(spec.headers, request_num)
+                            template_engine.substitute_dict(endpoint.headers, request_num)
                         )
 
                         body = None
-                        if spec.body:
-                            if isinstance(spec.body, dict):
+                        if endpoint.body:
+                            if isinstance(endpoint.body, dict):
                                 body = json.dumps(
-                                    template_engine.substitute_dict(spec.body, request_num)
+                                    template_engine.substitute_dict(endpoint.body, request_num)
                                 )
                                 if "Content-Type" not in headers:
                                     headers["Content-Type"] = "application/json"
                             else:
-                                body = template_engine.substitute(spec.body, request_num)
+                                body = template_engine.substitute(endpoint.body, request_num)
 
                         # Execute request
                         start_time = time.perf_counter()
                         try:
                             response = await client.request(
-                                method=spec.method.value,
+                                method=endpoint.method.value,
                                 url=url,
                                 headers=headers,
                                 content=body,
@@ -200,8 +300,9 @@ class TestExecutor:
                                 status_code=response.status_code,
                                 latency_ms=elapsed_ms,
                                 response_size_bytes=len(response.content),
+                                endpoint_name=endpoint_name,
                                 request_url=url if should_sample else None,
-                                request_method=spec.method.value if should_sample else None,
+                                request_method=endpoint.method.value if should_sample else None,
                                 request_headers=headers if should_sample else None,
                                 request_body=body if should_sample else None,
                                 response_headers=resp_headers,
@@ -221,8 +322,9 @@ class TestExecutor:
                                 request_number=request_num,
                                 latency_ms=elapsed_ms,
                                 error="timeout",
+                                endpoint_name=endpoint_name,
                                 request_url=url,
-                                request_method=spec.method.value,
+                                request_method=endpoint.method.value,
                                 request_headers=headers,
                                 request_body=body,
                             )
@@ -236,8 +338,9 @@ class TestExecutor:
                                 request_number=request_num,
                                 latency_ms=elapsed_ms,
                                 error=f"connection_error: {e}",
+                                endpoint_name=endpoint_name,
                                 request_url=url,
-                                request_method=spec.method.value,
+                                request_method=endpoint.method.value,
                                 request_headers=headers,
                                 request_body=body,
                             )
@@ -250,8 +353,9 @@ class TestExecutor:
                                 request_number=request_num,
                                 latency_ms=elapsed_ms,
                                 error=str(e),
+                                endpoint_name=endpoint_name,
                                 request_url=url,
-                                request_method=spec.method.value,
+                                request_method=endpoint.method.value,
                                 request_headers=headers,
                                 request_body=body,
                             )
@@ -298,8 +402,14 @@ class TestExecutor:
 
             # Finalize metrics
             metrics_collector.stop()
-            result.metrics = metrics_collector.compute_metrics()
             result.requests_completed = metrics_collector.count
+
+            # Handle metrics based on collector type
+            if is_multi_endpoint:
+                result.metrics = metrics_collector.compute_aggregate_metrics()
+                result.endpoint_metrics = metrics_collector.compute_endpoint_metrics()
+            else:
+                result.metrics = metrics_collector.compute_metrics()
 
             # Store sampled requests (sorted by request number)
             result.sampled_requests = sorted(sampled_results, key=lambda r: r.request_number)

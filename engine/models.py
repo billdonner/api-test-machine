@@ -24,6 +24,13 @@ class HttpMethod(str, Enum):
     OPTIONS = "OPTIONS"
 
 
+class DistributionStrategy(str, Enum):
+    """Strategy for distributing requests across multiple endpoints."""
+    ROUND_ROBIN = "round_robin"  # Cycle through endpoints: A, B, C, A, B, C...
+    WEIGHTED = "weighted"  # Distribute based on weights
+    SEQUENTIAL = "sequential"  # All requests to A, then B, then C
+
+
 class RunStatus(str, Enum):
     """Test run status."""
     PENDING = "pending"
@@ -42,16 +49,37 @@ class Thresholds(BaseModel):
     min_throughput_rps: float | None = None
 
 
+class EndpointSpec(BaseModel):
+    """Specification for a single endpoint in a multi-endpoint test."""
+    name: str = Field(..., min_length=1, max_length=128)
+    url: str = Field(..., description="Target URL for this endpoint")
+    method: HttpMethod = HttpMethod.GET
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | dict[str, Any] | None = None
+    weight: int = Field(default=1, ge=1, le=100, description="Weight for weighted distribution")
+    expected_status_codes: list[int] = Field(default_factory=lambda: [200, 201, 204])
+
+
 class TestSpec(BaseModel):
     """Specification for a load test."""
     name: str = Field(..., min_length=1, max_length=256)
     description: str | None = None
 
-    # Target configuration
-    url: str = Field(..., description="Target URL (supports template variables)")
+    # Target configuration (single endpoint - for backward compatibility)
+    url: str = Field(default="", description="Target URL (supports template variables)")
     method: HttpMethod = HttpMethod.GET
     headers: dict[str, str] = Field(default_factory=dict)
     body: str | dict[str, Any] | None = None
+
+    # Multi-endpoint configuration (optional)
+    endpoints: list[EndpointSpec] | None = Field(
+        default=None,
+        description="List of endpoints for multi-endpoint tests"
+    )
+    distribution_strategy: DistributionStrategy = Field(
+        default=DistributionStrategy.ROUND_ROBIN,
+        description="Strategy for distributing requests across endpoints"
+    )
 
     # Load configuration
     total_requests: int = Field(default=100, ge=1, le=1_000_000)
@@ -74,6 +102,34 @@ class TestSpec(BaseModel):
         description="Authentication configuration for requests"
     )
 
+    def get_endpoints(self) -> list[EndpointSpec]:
+        """Get endpoints list, creating one from single-URL config if needed.
+
+        This provides unified handling for both single-URL and multi-endpoint specs.
+
+        Returns:
+            List of EndpointSpec objects
+        """
+        if self.endpoints:
+            return self.endpoints
+
+        # Create a single endpoint from the legacy single-URL config
+        return [
+            EndpointSpec(
+                name="default",
+                url=self.url,
+                method=self.method,
+                headers=self.headers,
+                body=self.body,
+                weight=1,
+                expected_status_codes=self.expected_status_codes,
+            )
+        ]
+
+    def is_multi_endpoint(self) -> bool:
+        """Check if this is a multi-endpoint test."""
+        return self.endpoints is not None and len(self.endpoints) > 0
+
 
 class RequestResult(BaseModel):
     """Result of a single HTTP request."""
@@ -83,6 +139,9 @@ class RequestResult(BaseModel):
     error: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     response_size_bytes: int | None = None
+
+    # Multi-endpoint tracking
+    endpoint_name: str | None = None
 
     # Detailed request/response data (optional, for sampling)
     request_url: str | None = None
@@ -121,6 +180,12 @@ class Metrics(BaseModel):
     total_bytes_received: int = 0
 
 
+class EndpointMetrics(BaseModel):
+    """Metrics for a specific endpoint in a multi-endpoint test."""
+    endpoint_name: str
+    metrics: "Metrics"
+
+
 class RunResult(BaseModel):
     """Complete result of a test run."""
     id: UUID = Field(default_factory=uuid4)
@@ -135,6 +200,9 @@ class RunResult(BaseModel):
     metrics: Metrics = Field(default_factory=Metrics)
     passed: bool | None = None
     failure_reasons: list[str] = Field(default_factory=list)
+
+    # Per-endpoint metrics (for multi-endpoint tests)
+    endpoint_metrics: list[EndpointMetrics] = Field(default_factory=list)
 
     # Progress
     requests_completed: int = 0

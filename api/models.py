@@ -6,6 +6,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from engine.models import (
+    DistributionStrategy,
+    EndpointMetrics,
+    EndpointSpec,
     HttpMethod,
     Metrics,
     RequestResult,
@@ -54,6 +57,7 @@ class RequestSummary(BaseModel):
     error: str | None
     timestamp: datetime
     response_size_bytes: int | None
+    endpoint_name: str | None = None
 
 
 class RequestDetail(BaseModel):
@@ -64,6 +68,7 @@ class RequestDetail(BaseModel):
     error: str | None
     timestamp: datetime
     response_size_bytes: int | None
+    endpoint_name: str | None = None
     request_url: str | None
     request_method: str | None
     request_headers: dict[str, str] | None
@@ -85,6 +90,7 @@ class RunDetail(BaseModel):
     requests_completed: int
     error_message: str | None
     sampled_requests: list[RequestSummary] = Field(default_factory=list)
+    endpoint_metrics: list[EndpointMetrics] = Field(default_factory=list)
 
 
 class RunListResponse(BaseModel):

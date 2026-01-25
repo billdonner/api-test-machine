@@ -6,6 +6,18 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
 
+export type DistributionStrategy = 'round_robin' | 'weighted' | 'sequential';
+
+export interface EndpointSpec {
+	name: string;
+	url: string;
+	method: HttpMethod;
+	headers: Record<string, string>;
+	body?: string | Record<string, unknown>;
+	weight: number;
+	expected_status_codes: number[];
+}
+
 export interface Thresholds {
 	max_latency_p50_ms?: number;
 	max_latency_p95_ms?: number;
@@ -21,6 +33,10 @@ export interface TestSpec {
 	method: HttpMethod;
 	headers: Record<string, string>;
 	body?: string | Record<string, unknown>;
+	// Multi-endpoint configuration
+	endpoints?: EndpointSpec[];
+	distribution_strategy?: DistributionStrategy;
+	// Load configuration
 	total_requests: number;
 	concurrency: number;
 	requests_per_second?: number;
@@ -49,6 +65,11 @@ export interface Metrics {
 	total_bytes_received: number;
 }
 
+export interface EndpointMetrics {
+	endpoint_name: string;
+	metrics: Metrics;
+}
+
 export interface RunSummary {
 	id: string;
 	name: string;
@@ -67,9 +88,11 @@ export interface RequestSummary {
 	error: string | null;
 	timestamp: string;
 	response_size_bytes: number | null;
+	endpoint_name?: string | null;
 }
 
 export interface RequestDetail extends RequestSummary {
+	endpoint_name?: string | null;
 	request_url: string | null;
 	request_method: string | null;
 	request_headers: Record<string, string> | null;
@@ -90,6 +113,7 @@ export interface RunDetail {
 	requests_completed: number;
 	error_message?: string;
 	sampled_requests: RequestSummary[];
+	endpoint_metrics?: EndpointMetrics[];
 }
 
 export interface RunListResponse {

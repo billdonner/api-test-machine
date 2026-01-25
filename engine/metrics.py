@@ -4,7 +4,7 @@ import statistics
 from datetime import datetime
 from typing import Sequence
 
-from engine.models import Metrics, RequestResult, Thresholds
+from engine.models import EndpointMetrics, Metrics, RequestResult, Thresholds
 
 
 class MetricsCollector:
@@ -217,3 +217,92 @@ class MetricsCollector:
                 )
 
         return len(failures) == 0, failures
+
+
+class EndpointMetricsCollector:
+    """Collects metrics for multi-endpoint tests.
+
+    Maintains separate MetricsCollector instances for each endpoint
+    plus an aggregate collector for overall metrics.
+    """
+
+    def __init__(self, endpoint_names: list[str]):
+        """Initialize collectors for each endpoint.
+
+        Args:
+            endpoint_names: List of endpoint names to track
+        """
+        self._endpoint_collectors: dict[str, MetricsCollector] = {
+            name: MetricsCollector() for name in endpoint_names
+        }
+        self._aggregate_collector = MetricsCollector()
+
+    def start(self) -> None:
+        """Mark the start of metrics collection for all collectors."""
+        for collector in self._endpoint_collectors.values():
+            collector.start()
+        self._aggregate_collector.start()
+
+    def stop(self) -> None:
+        """Mark the end of metrics collection for all collectors."""
+        for collector in self._endpoint_collectors.values():
+            collector.stop()
+        self._aggregate_collector.stop()
+
+    def add_result(self, result: RequestResult) -> None:
+        """Add a request result to the appropriate collectors.
+
+        Args:
+            result: The result of a single request (must have endpoint_name set)
+        """
+        # Add to aggregate
+        self._aggregate_collector.add_result(result)
+
+        # Add to endpoint-specific collector
+        if result.endpoint_name and result.endpoint_name in self._endpoint_collectors:
+            self._endpoint_collectors[result.endpoint_name].add_result(result)
+
+    @property
+    def count(self) -> int:
+        """Return the total number of collected results."""
+        return self._aggregate_collector.count
+
+    def compute_aggregate_metrics(self) -> Metrics:
+        """Compute aggregate metrics across all endpoints.
+
+        Returns:
+            Metrics object with computed statistics
+        """
+        return self._aggregate_collector.compute_metrics()
+
+    def compute_endpoint_metrics(self) -> list[EndpointMetrics]:
+        """Compute metrics for each endpoint.
+
+        Returns:
+            List of EndpointMetrics objects
+        """
+        return [
+            EndpointMetrics(
+                endpoint_name=name,
+                metrics=collector.compute_metrics()
+            )
+            for name, collector in self._endpoint_collectors.items()
+        ]
+
+    def check_thresholds(
+        self,
+        thresholds: Thresholds,
+        expected_status_codes: list[int],
+    ) -> tuple[bool, list[str]]:
+        """Check if aggregate metrics pass the given thresholds.
+
+        Args:
+            thresholds: Threshold values to check against
+            expected_status_codes: Status codes considered successful
+
+        Returns:
+            Tuple of (passed, failure_reasons)
+        """
+        return self._aggregate_collector.check_thresholds(
+            thresholds, expected_status_codes
+        )
