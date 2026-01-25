@@ -1,222 +1,132 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { browser } from '$app/environment';
-	import type { RequestSummary } from '$lib/types';
+	import { Chart, colors, latencyColors } from '$lib/chartConfig';
+	import type { Metrics } from '$lib/types';
 
-	export let requests: RequestSummary[];
-	export let p50: number | undefined = undefined;
-	export let p95: number | undefined = undefined;
-	export let p99: number | undefined = undefined;
+	export let metrics: Metrics | null = null;
 
 	let canvas: HTMLCanvasElement;
-	let chart: any = null;
+	let chart: Chart | null = null;
 
-	$: sortedRequests = [...requests].sort((a, b) => a.request_number - b.request_number);
+	function hasData(m: Metrics | null): boolean {
+		if (!m) return false;
+		return (
+			m.latency_min_ms !== undefined ||
+			m.latency_p50_ms !== undefined ||
+			m.latency_p90_ms !== undefined ||
+			m.latency_p95_ms !== undefined ||
+			m.latency_p99_ms !== undefined ||
+			m.latency_max_ms !== undefined
+		);
+	}
 
-	$: chartData = {
-		labels: sortedRequests.map((r) => `#${r.request_number}`),
-		datasets: [
-			{
-				label: 'Latency (ms)',
-				data: sortedRequests.map((r) => r.latency_ms),
-				borderColor: sortedRequests.map((r) => (r.error ? '#ef4444' : '#60a5fa')),
-				backgroundColor: sortedRequests.map((r) => (r.error ? '#ef444480' : '#60a5fa80')),
-				pointRadius: 5,
-				pointHoverRadius: 7,
-				showLine: true,
-				tension: 0.1,
-				borderWidth: 2
+	function buildConfig(m: Metrics) {
+		const labels: string[] = [];
+		const data: number[] = [];
+		const bgColors: string[] = [];
+
+		// Build data arrays in order
+		const entries: [string, number | undefined, string][] = [
+			['Min', m.latency_min_ms, latencyColors[0]],
+			['P50', m.latency_p50_ms, latencyColors[1]],
+			['P90', m.latency_p90_ms, latencyColors[2]],
+			['P95', m.latency_p95_ms, latencyColors[3]],
+			['P99', m.latency_p99_ms, latencyColors[4]],
+			['Max', m.latency_max_ms, latencyColors[5]]
+		];
+
+		for (const [label, value, color] of entries) {
+			if (value !== undefined && value !== null) {
+				labels.push(label);
+				data.push(value);
+				bgColors.push(color);
 			}
-		]
-	};
-
-	async function initChart() {
-		if (!browser || !canvas) return;
-
-		const module = await import('chart.js/auto');
-		const Chart = module.default;
-
-		if (chart) {
-			chart.destroy();
 		}
 
-		// Build annotation lines for percentiles
-		const annotations: any = {};
-		if (p50) {
-			annotations.p50Line = {
-				type: 'line',
-				yMin: p50,
-				yMax: p50,
-				borderColor: '#22c55e',
-				borderWidth: 2,
-				borderDash: [5, 5],
-				label: {
-					display: true,
-					content: `P50: ${p50.toFixed(0)}ms`,
-					position: 'start',
-					backgroundColor: '#22c55e',
-					color: '#fff',
-					font: { size: 10 }
-				}
-			};
-		}
-		if (p95) {
-			annotations.p95Line = {
-				type: 'line',
-				yMin: p95,
-				yMax: p95,
-				borderColor: '#f59e0b',
-				borderWidth: 2,
-				borderDash: [5, 5],
-				label: {
-					display: true,
-					content: `P95: ${p95.toFixed(0)}ms`,
-					position: 'start',
-					backgroundColor: '#f59e0b',
-					color: '#fff',
-					font: { size: 10 }
-				}
-			};
-		}
-		if (p99) {
-			annotations.p99Line = {
-				type: 'line',
-				yMin: p99,
-				yMax: p99,
-				borderColor: '#ef4444',
-				borderWidth: 2,
-				borderDash: [5, 5],
-				label: {
-					display: true,
-					content: `P99: ${p99.toFixed(0)}ms`,
-					position: 'start',
-					backgroundColor: '#ef4444',
-					color: '#fff',
-					font: { size: 10 }
-				}
-			};
-		}
-
-		chart = new Chart(canvas, {
-			type: 'line',
-			data: chartData,
+		return {
+			type: 'bar' as const,
+			data: {
+				labels,
+				datasets: [
+					{
+						label: 'Latency (ms)',
+						data,
+						backgroundColor: bgColors,
+						borderColor: bgColors.map((c) => c),
+						borderWidth: 1,
+						borderRadius: 4
+					}
+				]
+			},
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
-				interaction: {
-					intersect: false,
-					mode: 'index'
-				},
 				plugins: {
 					legend: {
 						display: false
 					},
 					tooltip: {
+						backgroundColor: colors.slate[800],
+						titleColor: colors.slate[100],
+						bodyColor: colors.slate[300],
+						borderColor: colors.slate[600],
+						borderWidth: 1,
 						callbacks: {
-							title: function (context) {
-								const idx = context[0].dataIndex;
-								const req = sortedRequests[idx];
-								return `Request #${req.request_number}`;
-							},
-							label: function (context) {
-								const idx = context.dataIndex;
-								const req = sortedRequests[idx];
-								const lines = [`Latency: ${req.latency_ms.toFixed(2)}ms`];
-								if (req.status_code) lines.push(`Status: ${req.status_code}`);
-								if (req.error) lines.push(`Error: ${req.error}`);
-								if (req.response_size_bytes)
-									lines.push(`Size: ${(req.response_size_bytes / 1024).toFixed(1)}KB`);
-								return lines;
+							label: function (context: { raw: unknown }) {
+								const value = context.raw as number;
+								return `${value.toFixed(1)} ms`;
 							}
 						}
 					}
 				},
 				scales: {
 					x: {
-						display: true,
-						title: {
-							display: true,
-							text: 'Request',
-							color: '#94a3b8'
-						},
 						ticks: {
-							color: '#94a3b8',
-							maxTicksLimit: 10
+							color: colors.slate[400]
 						},
 						grid: {
-							color: '#334155'
+							display: false
 						}
 					},
 					y: {
-						display: true,
-						title: {
-							display: true,
-							text: 'Latency (ms)',
-							color: '#94a3b8'
-						},
+						beginAtZero: true,
 						ticks: {
-							color: '#94a3b8'
+							color: colors.slate[400],
+							callback: function (value: number | string) {
+								return `${value} ms`;
+							}
 						},
 						grid: {
-							color: '#334155'
-						},
-						beginAtZero: true
+							color: colors.slate[700]
+						}
 					}
 				}
 			}
-		});
-	}
-
-	$: if (browser && canvas && requests) {
-		if (chart) {
-			chart.data = chartData;
-			chart.update('none');
-		} else {
-			initChart();
-		}
+		};
 	}
 
 	onMount(() => {
-		initChart();
+		if (metrics && hasData(metrics)) {
+			chart = new Chart(canvas, buildConfig(metrics));
+		}
 	});
 
+	// Reactive update for polling
+	$: if (chart && metrics && hasData(metrics)) {
+		const config = buildConfig(metrics);
+		chart.data = config.data;
+		chart.update('none');
+	}
+
 	onDestroy(() => {
-		if (chart) {
-			chart.destroy();
-		}
+		chart?.destroy();
 	});
 </script>
 
-<div class="w-full h-64">
-	<canvas bind:this={canvas}></canvas>
-</div>
-
-<!-- Legend -->
-<div class="mt-3 flex flex-wrap gap-4 text-xs justify-center">
-	<div class="flex items-center gap-1">
-		<div class="w-3 h-3 rounded-full bg-blue-400"></div>
-		<span class="text-slate-400">Success</span>
-	</div>
-	<div class="flex items-center gap-1">
-		<div class="w-3 h-3 rounded-full bg-red-400"></div>
-		<span class="text-slate-400">Error</span>
-	</div>
-	{#if p50}
-		<div class="flex items-center gap-1">
-			<div class="w-4 h-0.5 bg-green-500"></div>
-			<span class="text-slate-400">P50</span>
-		</div>
-	{/if}
-	{#if p95}
-		<div class="flex items-center gap-1">
-			<div class="w-4 h-0.5 bg-amber-500"></div>
-			<span class="text-slate-400">P95</span>
-		</div>
-	{/if}
-	{#if p99}
-		<div class="flex items-center gap-1">
-			<div class="w-4 h-0.5 bg-red-500"></div>
-			<span class="text-slate-400">P99</span>
-		</div>
+<div class="h-64">
+	{#if hasData(metrics)}
+		<canvas bind:this={canvas}></canvas>
+	{:else}
+		<div class="h-full flex items-center justify-center text-slate-500">No latency data</div>
 	{/if}
 </div>

@@ -120,16 +120,21 @@ class TestExecutor:
                 sampled_results: list[RequestResult] = []
                 sampled_lock = asyncio.Lock()
 
+                # Capture run_result.id before defining inner function to avoid shadowing issues
+                run_result_id = result.id
+
                 async def execute_request(request_num: int) -> RequestResult:
                     nonlocal completed
 
                     # Check for cancellation
                     if cancel_event.is_set():
-                        return RequestResult(
+                        cancelled_result = RequestResult(
                             request_number=request_num,
                             latency_ms=0,
                             error="cancelled",
                         )
+                        metrics_collector.add_result(cancelled_result)
+                        return cancelled_result
 
                     async with semaphore:
                         # Rate limit
@@ -137,11 +142,13 @@ class TestExecutor:
 
                         # Check for cancellation again after waiting
                         if cancel_event.is_set():
-                            return RequestResult(
+                            cancelled_result = RequestResult(
                                 request_number=request_num,
                                 latency_ms=0,
                                 error="cancelled",
                             )
+                            metrics_collector.add_result(cancelled_result)
+                            return cancelled_result
 
                         # Build request
                         url = template_engine.substitute(spec.url, request_num)
@@ -207,7 +214,7 @@ class TestExecutor:
                                     if len(sampled_results) < max_sampled:
                                         sampled_results.append(req_result)
 
-                            result = req_result
+                            request_result = req_result
                         except httpx.TimeoutException:
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
                             req_result = RequestResult(
@@ -222,7 +229,7 @@ class TestExecutor:
                             # Always capture failures
                             async with sampled_lock:
                                 sampled_results.append(req_result)
-                            result = req_result
+                            request_result = req_result
                         except httpx.ConnectError as e:
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
                             req_result = RequestResult(
@@ -236,7 +243,7 @@ class TestExecutor:
                             )
                             async with sampled_lock:
                                 sampled_results.append(req_result)
-                            result = req_result
+                            request_result = req_result
                         except Exception as e:
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
                             req_result = RequestResult(
@@ -250,16 +257,16 @@ class TestExecutor:
                             )
                             async with sampled_lock:
                                 sampled_results.append(req_result)
-                            result = req_result
+                            request_result = req_result
 
                         # Add result to metrics collector immediately
-                        metrics_collector.add_result(result)
+                        metrics_collector.add_result(request_result)
 
                         # Update progress and live stats
                         async with completed_lock:
                             completed += 1
                             # Update the active run with live data
-                            active_run = self._active_runs.get(run_id or result.id)
+                            active_run = self._active_runs.get(run_id or run_result_id)
                             if active_run:
                                 active_run.requests_completed = completed
                                 # Update sampled requests
@@ -274,7 +281,7 @@ class TestExecutor:
                             if on_progress:
                                 on_progress(completed, spec.total_requests)
 
-                        return result
+                        return request_result
 
                 # Create all tasks
                 tasks = [

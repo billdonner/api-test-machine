@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { derived } from 'svelte/store';
 	import {
 		runs,
 		runsTotal,
@@ -10,160 +11,17 @@
 		stopPolling,
 		loadRuns
 	} from '$lib/stores';
-	import type { RunStatus, RunSummary } from '$lib/types';
-	import { StatusDistribution, PassFailGauge, SummaryStats } from '$lib/components/charts';
-	import { api } from '$lib/api';
+	import type { RunStatus } from '$lib/types';
 
 	const statuses: (RunStatus | null)[] = [null, 'pending', 'running', 'completed', 'cancelled', 'failed'];
 
-	// Track which test groups are expanded
-	let expandedGroups: Set<string> = new Set();
-
-	// Track re-running state
-	let rerunningId: string | null = null;
-
-	// Track deleting state
-	let deletingId: string | null = null;
-	let deleteConfirmId: string | null = null;
-
-	$: statusCounts = $runs.reduce(
-		(acc, run) => {
-			acc[run.status] = (acc[run.status] || 0) + 1;
-			return acc;
-		},
-		{ pending: 0, running: 0, completed: 0, cancelled: 0, failed: 0 } as Record<RunStatus, number>
-	);
-
-	$: passFailCounts = $runs.reduce(
-		(acc, run) => {
-			if (run.passed === true) acc.passed++;
-			else if (run.passed === false) acc.failed++;
-			return acc;
-		},
-		{ passed: 0, failed: 0 }
-	);
-
-	// Group runs by test name
-	interface TestGroup {
-		name: string;
-		runs: RunSummary[];
-		passCount: number;
-		failCount: number;
-		pendingCount: number;
-		latestRun: RunSummary;
-	}
-
-	$: groupedRuns = (() => {
-		const groups = new Map<string, TestGroup>();
-
-		for (const run of $runs) {
-			if (!groups.has(run.name)) {
-				groups.set(run.name, {
-					name: run.name,
-					runs: [],
-					passCount: 0,
-					failCount: 0,
-					pendingCount: 0,
-					latestRun: run
-				});
-			}
-			const group = groups.get(run.name)!;
-			group.runs.push(run);
-
-			if (run.passed === true) group.passCount++;
-			else if (run.passed === false) group.failCount++;
-			else group.pendingCount++;
-
-			// Track latest run by start time
-			if (run.started_at && (!group.latestRun.started_at || run.started_at > group.latestRun.started_at)) {
-				group.latestRun = run;
-			}
-		}
-
-		// Sort groups by latest run time
-		return Array.from(groups.values()).sort((a, b) => {
-			const aTime = a.latestRun.started_at || '';
-			const bTime = b.latestRun.started_at || '';
-			return bTime.localeCompare(aTime);
-		});
-	})();
-
-	function toggleGroup(name: string) {
-		if (expandedGroups.has(name)) {
-			expandedGroups.delete(name);
-		} else {
-			expandedGroups.add(name);
-		}
-		expandedGroups = expandedGroups; // trigger reactivity
-	}
-
-	function getGroupTint(group: TestGroup): string {
-		const total = group.passCount + group.failCount;
-		if (total === 0) return 'border-slate-700 bg-slate-800/50';
-		const passRate = group.passCount / total;
-		if (passRate >= 0.8) return 'border-green-800/50 bg-green-900/20';
-		if (passRate >= 0.5) return 'border-yellow-800/50 bg-yellow-900/20';
-		return 'border-red-800/50 bg-red-900/20';
-	}
-
-	function getGroupIcon(group: TestGroup): { color: string; icon: string } {
-		const total = group.passCount + group.failCount;
-		if (total === 0) return { color: 'text-slate-400', icon: '○' };
-		const passRate = group.passCount / total;
-		if (passRate >= 0.8) return { color: 'text-green-400', icon: '✓' };
-		if (passRate >= 0.5) return { color: 'text-yellow-400', icon: '◐' };
-		return { color: 'text-red-400', icon: '✗' };
-	}
-
-	async function rerunTest(run: RunSummary) {
-		rerunningId = run.id;
-		try {
-			// Fetch full run details to get the spec
-			const detail = await api.getRun(run.id);
-			const response = await api.createRun({ spec: detail.spec });
-			window.location.href = `/runs/${response.id}`;
-		} catch (e) {
-			console.error('Failed to re-run test:', e);
-			rerunningId = null;
-		}
-	}
-
-	async function editTest(run: RunSummary) {
-		try {
-			// Fetch full run details to get the spec
-			const detail = await api.getRun(run.id);
-			// Navigate to /new with spec data as URL params
-			const specJson = encodeURIComponent(JSON.stringify(detail.spec));
-			window.location.href = `/new?spec=${specJson}`;
-		} catch (e) {
-			console.error('Failed to load test for editing:', e);
-		}
-	}
-
-	async function deleteRun(run: RunSummary) {
-		if (deleteConfirmId !== run.id) {
-			// First click - show confirmation
-			deleteConfirmId = run.id;
-			return;
-		}
-
-		// Second click - actually delete
-		deletingId = run.id;
-		deleteConfirmId = null;
-		try {
-			await api.deleteRun(run.id);
-			// Refresh the runs list
-			await loadRuns();
-		} catch (e) {
-			console.error('Failed to delete run:', e);
-		} finally {
-			deletingId = null;
-		}
-	}
-
-	function cancelDelete() {
-		deleteConfirmId = null;
-	}
+	// Compute stats from current runs
+	const stats = derived(runs, ($runs) => {
+		const running = $runs.filter((r) => r.status === 'running').length;
+		const passed = $runs.filter((r) => r.passed === true).length;
+		const failed = $runs.filter((r) => r.passed === false).length;
+		return { running, passed, failed };
+	});
 
 	function setFilter(status: RunStatus | null) {
 		statusFilter.set(status);
@@ -177,21 +35,6 @@
 	function formatDate(dateStr: string | undefined): string {
 		if (!dateStr) return '-';
 		return new Date(dateStr).toLocaleString();
-	}
-
-	function formatRelativeTime(dateStr: string | undefined): string {
-		if (!dateStr) return '-';
-		const date = new Date(dateStr);
-		const now = new Date();
-		const diffMs = now.getTime() - date.getTime();
-		const diffMins = Math.floor(diffMs / 60000);
-		const diffHours = Math.floor(diffMins / 60);
-		const diffDays = Math.floor(diffHours / 24);
-
-		if (diffMins < 1) return 'just now';
-		if (diffMins < 60) return `${diffMins}m ago`;
-		if (diffHours < 24) return `${diffHours}h ago`;
-		return `${diffDays}d ago`;
 	}
 
 	onMount(() => {
@@ -213,22 +56,25 @@
 		<a href="/new" class="btn btn-primary">New Test</a>
 	</div>
 
-	<!-- Summary Stats -->
-	<SummaryStats {statusCounts} passed={passFailCounts.passed} failed={passFailCounts.failed} />
-
-	<!-- Charts Row -->
-	{#if $runs.length > 0}
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-			<div class="card flex flex-col items-center py-6">
-				<h3 class="text-sm font-medium text-slate-400 mb-4">Test Runs by Status</h3>
-				<StatusDistribution {statusCounts} />
-			</div>
-			<div class="card flex flex-col items-center py-6">
-				<h3 class="text-sm font-medium text-slate-400 mb-4">Test Run Pass/Fail Rate</h3>
-				<PassFailGauge passed={passFailCounts.passed} failed={passFailCounts.failed} />
-			</div>
+	<!-- Stats Overview -->
+	<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+		<div class="card">
+			<div class="text-slate-400 text-sm">Total Runs</div>
+			<div class="text-3xl font-bold text-white">{$runsTotal}</div>
 		</div>
-	{/if}
+		<div class="card">
+			<div class="text-slate-400 text-sm">Running</div>
+			<div class="text-3xl font-bold text-blue-400">{$stats.running}</div>
+		</div>
+		<div class="card">
+			<div class="text-slate-400 text-sm">Passed</div>
+			<div class="text-3xl font-bold text-green-400">{$stats.passed}</div>
+		</div>
+		<div class="card">
+			<div class="text-slate-400 text-sm">Failed</div>
+			<div class="text-3xl font-bold text-red-400">{$stats.failed}</div>
+		</div>
+	</div>
 
 	<!-- Filters -->
 	<div class="card">
@@ -254,223 +100,72 @@
 		</div>
 	{/if}
 
-	<!-- Grouped Test Runs -->
-	<div class="space-y-3">
+	<!-- Runs table -->
+	<div class="card overflow-x-auto">
 		{#if $runsLoading && $runs.length === 0}
-			<div class="card text-center py-8 text-slate-400">Loading...</div>
+			<div class="text-center py-8 text-slate-400">Loading...</div>
 		{:else if $runs.length === 0}
-			<div class="card text-center py-8 text-slate-400">
+			<div class="text-center py-8 text-slate-400">
 				No test runs found.
 				<a href="/new" class="text-blue-400 hover:underline">Create one?</a>
 			</div>
 		{:else}
-			{#each groupedRuns as group}
-				{@const isExpanded = expandedGroups.has(group.name)}
-				{@const tint = getGroupTint(group)}
-				{@const icon = getGroupIcon(group)}
-
-				<div class="rounded-lg border {tint} overflow-hidden transition-colors">
-					<!-- Group Header (Collapsed View) -->
-					<button
-						on:click={() => toggleGroup(group.name)}
-						class="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/30 transition-colors"
-					>
-						<div class="flex items-center gap-3">
-							<!-- Expand/Collapse Icon -->
-							<svg
-								class="w-4 h-4 text-slate-400 transition-transform {isExpanded ? 'rotate-90' : ''}"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-							</svg>
-
-							<!-- Status Icon -->
-							<span class="{icon.color} text-lg">{icon.icon}</span>
-
-							<!-- Test Name -->
-							<span class="font-medium text-white">{group.name}</span>
-
-							<!-- Run Count Badge -->
-							<span class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
-								{group.runs.length} run{group.runs.length !== 1 ? 's' : ''}
-							</span>
-						</div>
-
-						<div class="flex items-center gap-4 text-sm">
-							<!-- Pass/Fail Summary -->
-							{#if group.passCount > 0 || group.failCount > 0}
+			<table class="w-full">
+				<thead>
+					<tr class="text-left text-slate-400 text-sm border-b border-slate-700">
+						<th class="pb-3 font-medium">Name</th>
+						<th class="pb-3 font-medium">Status</th>
+						<th class="pb-3 font-medium">Progress</th>
+						<th class="pb-3 font-medium">Result</th>
+						<th class="pb-3 font-medium">Started</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-slate-700">
+					{#each $runs as run}
+						<tr class="hover:bg-slate-700/50">
+							<td class="py-3">
+								<a href="/runs/{run.id}" class="text-blue-400 hover:underline font-medium">
+									{run.name}
+								</a>
+								<div class="text-xs text-slate-500 font-mono">{run.id.slice(0, 8)}...</div>
+							</td>
+							<td class="py-3">
+								<span class="{getStatusClass(run.status)} font-medium capitalize">
+									{run.status}
+								</span>
+							</td>
+							<td class="py-3">
 								<div class="flex items-center gap-2">
-									{#if group.passCount > 0}
-										<span class="text-green-400">{group.passCount} ✓</span>
-									{/if}
-									{#if group.failCount > 0}
-										<span class="text-red-400">{group.failCount} ✗</span>
-									{/if}
-									{#if group.pendingCount > 0}
-										<span class="text-slate-400">{group.pendingCount} ○</span>
-									{/if}
+									<div class="w-24 bg-slate-700 rounded-full h-2">
+										<div
+											class="bg-blue-500 rounded-full h-2 transition-all"
+											style="width: {(run.requests_completed / run.total_requests) * 100}%"
+										></div>
+									</div>
+									<span class="text-sm text-slate-400">
+										{run.requests_completed}/{run.total_requests}
+									</span>
 								</div>
-							{/if}
+							</td>
+							<td class="py-3">
+								{#if run.passed === true}
+									<span class="text-green-400 font-medium">PASS</span>
+								{:else if run.passed === false}
+									<span class="text-red-400 font-medium">FAIL</span>
+								{:else}
+									<span class="text-slate-500">-</span>
+								{/if}
+							</td>
+							<td class="py-3 text-sm text-slate-400">
+								{formatDate(run.started_at)}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
 
-							<!-- Latest Run Time -->
-							<span class="text-slate-500 text-xs">
-								{formatRelativeTime(group.latestRun.started_at)}
-							</span>
-
-							<!-- Quick Re-run Button (on collapsed) -->
-							{#if !isExpanded}
-								<button
-									on:click|stopPropagation={() => rerunTest(group.latestRun)}
-									disabled={rerunningId === group.latestRun.id}
-									class="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-slate-700/50"
-									title="Re-run latest"
-								>
-									{#if rerunningId === group.latestRun.id}
-										<svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-										</svg>
-									{:else}
-										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-										</svg>
-									{/if}
-								</button>
-							{/if}
-						</div>
-					</button>
-
-					<!-- Expanded Content -->
-					{#if isExpanded}
-						<div class="border-t border-slate-700/50">
-							<table class="w-full">
-								<thead>
-									<tr class="text-left text-slate-400 text-xs border-b border-slate-700/50 bg-slate-800/30">
-										<th class="px-4 py-2 font-medium">Run ID</th>
-										<th class="px-4 py-2 font-medium">Status</th>
-										<th class="px-4 py-2 font-medium">HTTP Requests</th>
-										<th class="px-4 py-2 font-medium">Result</th>
-										<th class="px-4 py-2 font-medium">Started</th>
-										<th class="px-4 py-2 font-medium">Actions</th>
-									</tr>
-								</thead>
-								<tbody class="divide-y divide-slate-700/50">
-									{#each group.runs as run}
-										<tr class="hover:bg-slate-700/30">
-											<td class="px-4 py-2">
-												<a href="/runs/{run.id}" class="text-blue-400 hover:underline font-mono text-sm">
-													{run.id.slice(0, 8)}...
-												</a>
-											</td>
-											<td class="px-4 py-2">
-												<span class="{getStatusClass(run.status)} font-medium capitalize text-sm">
-													{run.status}
-												</span>
-											</td>
-											<td class="px-4 py-2">
-												<div class="flex items-center gap-2">
-													<div class="w-16 bg-slate-700 rounded-full h-1.5">
-														<div
-															class="bg-blue-500 rounded-full h-1.5 transition-all"
-															style="width: {(run.requests_completed / run.total_requests) * 100}%"
-														></div>
-													</div>
-													<span class="text-xs text-slate-400">
-														{run.requests_completed}/{run.total_requests}
-													</span>
-												</div>
-											</td>
-											<td class="px-4 py-2">
-												{#if run.passed === true}
-													<span class="text-green-400 font-medium text-sm">PASS</span>
-												{:else if run.passed === false}
-													<span class="text-red-400 font-medium text-sm">FAIL</span>
-												{:else}
-													<span class="text-slate-500 text-sm">-</span>
-												{/if}
-											</td>
-											<td class="px-4 py-2 text-xs text-slate-400">
-												{formatDate(run.started_at)}
-											</td>
-											<td class="px-4 py-2">
-												<div class="flex items-center gap-2">
-													<a
-														href="/runs/{run.id}"
-														class="text-slate-400 hover:text-white text-xs"
-													>
-														View
-													</a>
-													<button
-														on:click={() => editTest(run)}
-														class="text-slate-400 hover:text-white text-xs"
-														title="Edit and create new test"
-													>
-														Edit
-													</button>
-													<button
-														on:click={() => rerunTest(run)}
-														disabled={rerunningId === run.id || run.status === 'running'}
-														class="text-blue-400 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-xs"
-													>
-														{#if rerunningId === run.id}
-															<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-																<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-																<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-															</svg>
-														{:else}
-															<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-															</svg>
-														{/if}
-														Re-run
-													</button>
-													{#if deleteConfirmId === run.id}
-														<span class="text-red-400 text-xs">Delete?</span>
-														<button
-															on:click={() => deleteRun(run)}
-															disabled={deletingId === run.id}
-															class="text-red-400 hover:text-red-300 text-xs font-medium"
-														>
-															Yes
-														</button>
-														<button
-															on:click={cancelDelete}
-															class="text-slate-400 hover:text-white text-xs"
-														>
-															No
-														</button>
-													{:else}
-														<button
-															on:click={() => deleteRun(run)}
-															disabled={deletingId === run.id || run.status === 'running'}
-															class="text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-															title="Delete this run"
-														>
-															{#if deletingId === run.id}
-																<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-																	<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-																	<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-																</svg>
-															{:else}
-																Delete
-															{/if}
-														</button>
-													{/if}
-												</div>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				</div>
-			{/each}
-
-			<div class="text-sm text-slate-400 text-center pt-2">
-				{groupedRuns.length} test type{groupedRuns.length !== 1 ? 's' : ''} · {$runs.length} of {$runsTotal} total runs
+			<div class="mt-4 pt-4 border-t border-slate-700 text-sm text-slate-400">
+				Showing {$runs.length} of {$runsTotal} runs
 			</div>
 		{/if}
 	</div>
