@@ -22,6 +22,10 @@
 	// Track re-running state
 	let rerunningId: string | null = null;
 
+	// Track deleting state
+	let deletingId: string | null = null;
+	let deleteConfirmId: string | null = null;
+
 	$: statusCounts = $runs.reduce(
 		(acc, run) => {
 			acc[run.status] = (acc[run.status] || 0) + 1;
@@ -122,6 +126,43 @@
 			console.error('Failed to re-run test:', e);
 			rerunningId = null;
 		}
+	}
+
+	async function editTest(run: RunSummary) {
+		try {
+			// Fetch full run details to get the spec
+			const detail = await api.getRun(run.id);
+			// Navigate to /new with spec data as URL params
+			const specJson = encodeURIComponent(JSON.stringify(detail.spec));
+			window.location.href = `/new?spec=${specJson}`;
+		} catch (e) {
+			console.error('Failed to load test for editing:', e);
+		}
+	}
+
+	async function deleteRun(run: RunSummary) {
+		if (deleteConfirmId !== run.id) {
+			// First click - show confirmation
+			deleteConfirmId = run.id;
+			return;
+		}
+
+		// Second click - actually delete
+		deletingId = run.id;
+		deleteConfirmId = null;
+		try {
+			await api.deleteRun(run.id);
+			// Refresh the runs list
+			await loadRuns();
+		} catch (e) {
+			console.error('Failed to delete run:', e);
+		} finally {
+			deletingId = null;
+		}
+	}
+
+	function cancelDelete() {
+		deleteConfirmId = null;
 	}
 
 	function setFilter(status: RunStatus | null) {
@@ -362,6 +403,13 @@
 														View
 													</a>
 													<button
+														on:click={() => editTest(run)}
+														class="text-slate-400 hover:text-white text-xs"
+														title="Edit and create new test"
+													>
+														Edit
+													</button>
+													<button
 														on:click={() => rerunTest(run)}
 														disabled={rerunningId === run.id || run.status === 'running'}
 														class="text-blue-400 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-xs"
@@ -378,6 +426,38 @@
 														{/if}
 														Re-run
 													</button>
+													{#if deleteConfirmId === run.id}
+														<span class="text-red-400 text-xs">Delete?</span>
+														<button
+															on:click={() => deleteRun(run)}
+															disabled={deletingId === run.id}
+															class="text-red-400 hover:text-red-300 text-xs font-medium"
+														>
+															Yes
+														</button>
+														<button
+															on:click={cancelDelete}
+															class="text-slate-400 hover:text-white text-xs"
+														>
+															No
+														</button>
+													{:else}
+														<button
+															on:click={() => deleteRun(run)}
+															disabled={deletingId === run.id || run.status === 'running'}
+															class="text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+															title="Delete this run"
+														>
+															{#if deletingId === run.id}
+																<svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+																	<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+																	<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+																</svg>
+															{:else}
+																Delete
+															{/if}
+														</button>
+													{/if}
 												</div>
 											</td>
 										</tr>

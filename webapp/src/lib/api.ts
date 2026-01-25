@@ -74,6 +74,10 @@ class ApiClient {
 	async getRequestDetail(runId: string, requestNumber: number): Promise<RequestDetail> {
 		return this.request<RequestDetail>('GET', `/api/v1/runs/${runId}/requests/${requestNumber}`);
 	}
+
+	async deleteRun(id: string): Promise<{ id: string; message: string }> {
+		return this.request('DELETE', `/api/v1/runs/${id}`);
+	}
 }
 
 export const api = new ApiClient();

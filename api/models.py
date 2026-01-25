@@ -107,6 +107,12 @@ class CancelRunResponse(BaseModel):
     message: str
 
 
+class DeleteRunResponse(BaseModel):
+    """Response when deleting a run."""
+    id: UUID
+    message: str = "Run deleted"
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
     error: str

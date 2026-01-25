@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import type { HttpMethod } from '$lib/types';
+	import type { HttpMethod, TestSpec } from '$lib/types';
 
 	let name = '';
 	let url = '';
@@ -19,8 +21,46 @@
 
 	let submitting = false;
 	let error: string | null = null;
+	let isEditing = false;
 
 	const methods: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+	onMount(() => {
+		// Check for spec in URL params (for editing)
+		const specParam = $page.url.searchParams.get('spec');
+		if (specParam) {
+			try {
+				const spec: TestSpec = JSON.parse(decodeURIComponent(specParam));
+				isEditing = true;
+
+				// Pre-fill form fields
+				name = spec.name || '';
+				url = spec.url || '';
+				method = spec.method || 'GET';
+				totalRequests = spec.total_requests || 100;
+				concurrency = spec.concurrency || 10;
+				requestsPerSecond = spec.requests_per_second || null;
+				timeoutSeconds = spec.timeout_seconds || 30;
+
+				if (spec.headers && Object.keys(spec.headers).length > 0) {
+					headersText = JSON.stringify(spec.headers, null, 2);
+				}
+				if (spec.body) {
+					if (typeof spec.body === 'string') {
+						bodyText = spec.body;
+					} else {
+						bodyText = JSON.stringify(spec.body, null, 2);
+					}
+				}
+				if (spec.thresholds) {
+					maxLatencyP95 = spec.thresholds.max_latency_p95_ms || null;
+					maxErrorRate = spec.thresholds.max_error_rate ? spec.thresholds.max_error_rate * 100 : null;
+				}
+			} catch (e) {
+				console.error('Failed to parse spec from URL:', e);
+			}
+		}
+	});
 
 	async function submit() {
 		error = null;
@@ -89,14 +129,20 @@
 </script>
 
 <svelte:head>
-	<title>New Test | API Test Machine</title>
+	<title>{isEditing ? 'Edit Test' : 'New Test'} | API Test Machine</title>
 </svelte:head>
 
 <div class="max-w-2xl mx-auto space-y-6">
 	<div class="flex items-center gap-4">
 		<a href="/" class="text-slate-400 hover:text-white">&larr; Back</a>
-		<h1 class="text-2xl font-bold">New Test</h1>
+		<h1 class="text-2xl font-bold">{isEditing ? 'Edit Test' : 'New Test'}</h1>
 	</div>
+
+	{#if isEditing}
+		<div class="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4 text-blue-300 text-sm">
+			Editing a test will create a new test run with the modified settings. The original run will not be changed.
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-300">
@@ -261,7 +307,7 @@
 		<div class="flex justify-end gap-4">
 			<a href="/" class="btn btn-secondary">Cancel</a>
 			<button type="submit" disabled={submitting} class="btn btn-primary">
-				{submitting ? 'Starting...' : 'Start Test'}
+				{submitting ? 'Starting...' : isEditing ? 'Run Modified Test' : 'Start Test'}
 			</button>
 		</div>
 	</form>

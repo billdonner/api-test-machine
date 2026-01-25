@@ -10,6 +10,7 @@ from api.models import (
     CancelRunResponse,
     CreateRunRequest,
     CreateRunResponse,
+    DeleteRunResponse,
     ErrorResponse,
     HealthResponse,
     RequestDetail,
@@ -320,3 +321,41 @@ async def get_request_detail(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Request {request_number} not found in sampled requests for run {run_id}",
     )
+
+
+@runs_router.delete(
+    "/{run_id}",
+    response_model=DeleteRunResponse,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+    },
+)
+async def delete_run(
+    run_id: UUID,
+    api_key: ApiKeyDep,
+) -> DeleteRunResponse:
+    """Delete a test run and its results.
+
+    Cannot delete a currently running test - cancel it first.
+    """
+    exec = get_executor()
+    store = get_storage()
+
+    # Check if run is currently active
+    if exec.get_active_run(run_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Run {run_id} is currently running. Cancel it first.",
+        )
+
+    # Try to delete from storage
+    deleted = store.delete(run_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_id} not found",
+        )
+
+    return DeleteRunResponse(id=run_id)
