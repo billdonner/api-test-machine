@@ -1,0 +1,20 @@
+{
+  "name": "NYC Weather Test",
+  "description": "Load test against National Weather Service API for NYC",
+  "url": "https://api.weather.gov/gridpoints/OKX/33,37/forecast",
+  "method": "GET",
+  "headers": {
+    "User-Agent": "API-Test-Machine/0.1.0",
+    "Accept": "application/geo+json"
+  },
+  "total_requests": 20,
+  "concurrency": 3,
+  "requests_per_second": 2,
+  "timeout_seconds": 30,
+  "thresholds": {
+    "max_latency_p95_ms": 2000,
+    "max_error_rate": 0.1
+  },
+  "expected_status_codes": [200],
+  "variables": {}
+}

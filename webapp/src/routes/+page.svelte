@@ -11,8 +11,26 @@
 		loadRuns
 	} from '$lib/stores';
 	import type { RunStatus } from '$lib/types';
+	import { StatusDistribution, PassFailGauge, SummaryStats } from '$lib/components/charts';
 
 	const statuses: (RunStatus | null)[] = [null, 'pending', 'running', 'completed', 'cancelled', 'failed'];
+
+	$: statusCounts = $runs.reduce(
+		(acc, run) => {
+			acc[run.status] = (acc[run.status] || 0) + 1;
+			return acc;
+		},
+		{ pending: 0, running: 0, completed: 0, cancelled: 0, failed: 0 } as Record<RunStatus, number>
+	);
+
+	$: passFailCounts = $runs.reduce(
+		(acc, run) => {
+			if (run.passed === true) acc.passed++;
+			else if (run.passed === false) acc.failed++;
+			return acc;
+		},
+		{ passed: 0, failed: 0 }
+	);
 
 	function setFilter(status: RunStatus | null) {
 		statusFilter.set(status);
@@ -46,6 +64,23 @@
 		<h1 class="text-2xl font-bold">Dashboard</h1>
 		<a href="/new" class="btn btn-primary">New Test</a>
 	</div>
+
+	<!-- Summary Stats -->
+	<SummaryStats {statusCounts} passed={passFailCounts.passed} failed={passFailCounts.failed} />
+
+	<!-- Charts Row -->
+	{#if $runs.length > 0}
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+			<div class="card flex flex-col items-center py-6">
+				<h3 class="text-sm font-medium text-slate-400 mb-4">Status Distribution</h3>
+				<StatusDistribution {statusCounts} />
+			</div>
+			<div class="card flex flex-col items-center py-6">
+				<h3 class="text-sm font-medium text-slate-400 mb-4">Pass/Fail Rate</h3>
+				<PassFailGauge passed={passFailCounts.passed} failed={passFailCounts.failed} />
+			</div>
+		</div>
+	{/if}
 
 	<!-- Filters -->
 	<div class="card">
