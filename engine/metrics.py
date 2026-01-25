@@ -169,6 +169,12 @@ class MetricsCollector:
         metrics = self.compute_metrics()
         failures: list[str] = []
 
+        # Any failed request causes the run to fail
+        if metrics.failed_requests > 0:
+            failures.append(
+                f"{metrics.failed_requests} request(s) failed"
+            )
+
         # Check latency thresholds
         if thresholds.max_latency_p50_ms is not None:
             if metrics.latency_p50_ms and metrics.latency_p50_ms > thresholds.max_latency_p50_ms:
