@@ -6,6 +6,7 @@ import type {
 	CreateRunRequest,
 	CreateRunResponse,
 	HealthResponse,
+	RequestDetail,
 	RunDetail,
 	RunListResponse
 } from './types';
@@ -68,6 +69,10 @@ class ApiClient {
 
 	async cancelRun(id: string): Promise<{ id: string; status: string; message: string }> {
 		return this.request('POST', `/api/v1/runs/${id}/cancel`);
+	}
+
+	async getRequestDetail(runId: string, requestNumber: number): Promise<RequestDetail> {
+		return this.request<RequestDetail>('GET', `/api/v1/runs/${runId}/requests/${requestNumber}`);
 	}
 }
 

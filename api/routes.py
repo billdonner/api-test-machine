@@ -12,6 +12,8 @@ from api.models import (
     CreateRunResponse,
     ErrorResponse,
     HealthResponse,
+    RequestDetail,
+    RequestSummary,
     RunDetail,
     RunListResponse,
     RunSummary,
@@ -158,6 +160,17 @@ async def get_run(
     # Check active runs first (for live progress)
     active = exec.get_active_run(run_id)
     if active:
+        sampled = [
+            RequestSummary(
+                request_number=r.request_number,
+                status_code=r.status_code,
+                latency_ms=r.latency_ms,
+                error=r.error,
+                timestamp=r.timestamp,
+                response_size_bytes=r.response_size_bytes,
+            )
+            for r in active.sampled_requests
+        ]
         return RunDetail(
             id=active.id,
             spec=active.spec,
@@ -169,6 +182,7 @@ async def get_run(
             failure_reasons=active.failure_reasons,
             requests_completed=active.requests_completed,
             error_message=active.error_message,
+            sampled_requests=sampled,
         )
 
     # Load from storage
@@ -178,6 +192,18 @@ async def get_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Run {run_id} not found",
         )
+
+    sampled = [
+        RequestSummary(
+            request_number=r.request_number,
+            status_code=r.status_code,
+            latency_ms=r.latency_ms,
+            error=r.error,
+            timestamp=r.timestamp,
+            response_size_bytes=r.response_size_bytes,
+        )
+        for r in result.sampled_requests
+    ]
 
     return RunDetail(
         id=result.id,
@@ -190,6 +216,7 @@ async def get_run(
         failure_reasons=result.failure_reasons,
         requests_completed=result.requests_completed,
         error_message=result.error_message,
+        sampled_requests=sampled,
     )
 
 
@@ -237,4 +264,59 @@ async def cancel_run(
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Run {run_id} not found or not running",
+    )
+
+
+@runs_router.get(
+    "/{run_id}/requests/{request_number}",
+    response_model=RequestDetail,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def get_request_detail(
+    run_id: UUID,
+    request_number: int,
+    api_key: ApiKeyDep,
+) -> RequestDetail:
+    """Get full details of a specific request including headers and body."""
+    store = get_storage()
+    exec = get_executor()
+
+    # Check active runs first
+    active = exec.get_active_run(run_id)
+    sampled_requests = []
+    if active:
+        sampled_requests = active.sampled_requests
+    else:
+        result = store.load(run_id)
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Run {run_id} not found",
+            )
+        sampled_requests = result.sampled_requests
+
+    # Find the specific request
+    for req in sampled_requests:
+        if req.request_number == request_number:
+            return RequestDetail(
+                request_number=req.request_number,
+                status_code=req.status_code,
+                latency_ms=req.latency_ms,
+                error=req.error,
+                timestamp=req.timestamp,
+                response_size_bytes=req.response_size_bytes,
+                request_url=req.request_url,
+                request_method=req.request_method,
+                request_headers=req.request_headers,
+                request_body=req.request_body,
+                response_headers=req.response_headers,
+                response_body=req.response_body,
+            )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Request {request_number} not found in sampled requests for run {run_id}",
     )

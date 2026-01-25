@@ -84,6 +84,14 @@ class RequestResult(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     response_size_bytes: int | None = None
 
+    # Detailed request/response data (optional, for sampling)
+    request_url: str | None = None
+    request_method: str | None = None
+    request_headers: dict[str, str] | None = None
+    request_body: str | None = None
+    response_headers: dict[str, str] | None = None
+    response_body: str | None = None
+
 
 class Metrics(BaseModel):
     """Aggregated metrics for a test run."""
@@ -133,6 +141,9 @@ class RunResult(BaseModel):
 
     # Error message if status is FAILED
     error_message: str | None = None
+
+    # Sampled request/response data (stores first N and any failures)
+    sampled_requests: list[RequestResult] = Field(default_factory=list)
 
     def model_post_init(self, __context: Any) -> None:
         """Ensure id is always set."""

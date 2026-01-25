@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from engine.models import (
     HttpMethod,
     Metrics,
+    RequestResult,
     RunStatus,
     TestSpec,
     Thresholds,
@@ -45,6 +46,32 @@ class RunSummary(BaseModel):
     passed: bool | None
 
 
+class RequestSummary(BaseModel):
+    """Summary of a single request for list views."""
+    request_number: int
+    status_code: int | None
+    latency_ms: float
+    error: str | None
+    timestamp: datetime
+    response_size_bytes: int | None
+
+
+class RequestDetail(BaseModel):
+    """Full details of a single request."""
+    request_number: int
+    status_code: int | None
+    latency_ms: float
+    error: str | None
+    timestamp: datetime
+    response_size_bytes: int | None
+    request_url: str | None
+    request_method: str | None
+    request_headers: dict[str, str] | None
+    request_body: str | None
+    response_headers: dict[str, str] | None
+    response_body: str | None
+
+
 class RunDetail(BaseModel):
     """Full details of a test run."""
     id: UUID
@@ -57,6 +84,7 @@ class RunDetail(BaseModel):
     failure_reasons: list[str]
     requests_completed: int
     error_message: str | None
+    sampled_requests: list[RequestSummary] = Field(default_factory=list)
 
 
 class RunListResponse(BaseModel):

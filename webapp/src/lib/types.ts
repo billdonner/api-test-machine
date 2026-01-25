@@ -60,6 +60,24 @@ export interface RunSummary {
 	passed?: boolean;
 }
 
+export interface RequestSummary {
+	request_number: number;
+	status_code: number | null;
+	latency_ms: number;
+	error: string | null;
+	timestamp: string;
+	response_size_bytes: number | null;
+}
+
+export interface RequestDetail extends RequestSummary {
+	request_url: string | null;
+	request_method: string | null;
+	request_headers: Record<string, string> | null;
+	request_body: string | null;
+	response_headers: Record<string, string> | null;
+	response_body: string | null;
+}
+
 export interface RunDetail {
 	id: string;
 	spec: TestSpec;
@@ -71,6 +89,7 @@ export interface RunDetail {
 	failure_reasons: string[];
 	requests_completed: number;
 	error_message?: string;
+	sampled_requests: RequestSummary[];
 }
 
 export interface RunListResponse {

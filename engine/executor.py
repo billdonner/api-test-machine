@@ -115,6 +115,11 @@ class TestExecutor:
                 completed = 0
                 completed_lock = asyncio.Lock()
 
+                # Sampling config: capture first N requests and all failures
+                max_sampled = 20
+                sampled_results: list[RequestResult] = []
+                sampled_lock = asyncio.Lock()
+
                 async def execute_request(request_num: int) -> RequestResult:
                     nonlocal completed
 
@@ -167,37 +172,105 @@ class TestExecutor:
                             )
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-                            result = RequestResult(
+                            # Determine if we should capture full details
+                            should_sample = False
+                            async with sampled_lock:
+                                if len(sampled_results) < max_sampled:
+                                    should_sample = True
+
+                            # Truncate response body for storage (max 10KB)
+                            resp_body = None
+                            resp_headers = None
+                            if should_sample:
+                                try:
+                                    resp_body = response.text[:10240] if response.text else None
+                                except Exception:
+                                    resp_body = f"<binary: {len(response.content)} bytes>"
+                                resp_headers = dict(response.headers)
+
+                            req_result = RequestResult(
                                 request_number=request_num,
                                 status_code=response.status_code,
                                 latency_ms=elapsed_ms,
                                 response_size_bytes=len(response.content),
+                                request_url=url if should_sample else None,
+                                request_method=spec.method.value if should_sample else None,
+                                request_headers=headers if should_sample else None,
+                                request_body=body if should_sample else None,
+                                response_headers=resp_headers,
+                                response_body=resp_body,
                             )
+
+                            # Add to sampled results if applicable
+                            if should_sample:
+                                async with sampled_lock:
+                                    if len(sampled_results) < max_sampled:
+                                        sampled_results.append(req_result)
+
+                            result = req_result
                         except httpx.TimeoutException:
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
-                            result = RequestResult(
+                            req_result = RequestResult(
                                 request_number=request_num,
                                 latency_ms=elapsed_ms,
                                 error="timeout",
+                                request_url=url,
+                                request_method=spec.method.value,
+                                request_headers=headers,
+                                request_body=body,
                             )
+                            # Always capture failures
+                            async with sampled_lock:
+                                sampled_results.append(req_result)
+                            result = req_result
                         except httpx.ConnectError as e:
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
-                            result = RequestResult(
+                            req_result = RequestResult(
                                 request_number=request_num,
                                 latency_ms=elapsed_ms,
                                 error=f"connection_error: {e}",
+                                request_url=url,
+                                request_method=spec.method.value,
+                                request_headers=headers,
+                                request_body=body,
                             )
+                            async with sampled_lock:
+                                sampled_results.append(req_result)
+                            result = req_result
                         except Exception as e:
                             elapsed_ms = (time.perf_counter() - start_time) * 1000
-                            result = RequestResult(
+                            req_result = RequestResult(
                                 request_number=request_num,
                                 latency_ms=elapsed_ms,
                                 error=str(e),
+                                request_url=url,
+                                request_method=spec.method.value,
+                                request_headers=headers,
+                                request_body=body,
                             )
+                            async with sampled_lock:
+                                sampled_results.append(req_result)
+                            result = req_result
 
-                        # Update progress
+                        # Add result to metrics collector immediately
+                        metrics_collector.add_result(result)
+
+                        # Update progress and live stats
                         async with completed_lock:
                             completed += 1
+                            # Update the active run with live data
+                            active_run = self._active_runs.get(run_id or result.id)
+                            if active_run:
+                                active_run.requests_completed = completed
+                                # Update sampled requests
+                                async with sampled_lock:
+                                    active_run.sampled_requests = sorted(
+                                        sampled_results, key=lambda r: r.request_number
+                                    )
+                                # Compute live metrics every 5 requests or on last request
+                                if completed % 5 == 0 or completed == spec.total_requests:
+                                    active_run.metrics = metrics_collector.compute_metrics()
+
                             if on_progress:
                                 on_progress(completed, spec.total_requests)
 
@@ -210,18 +283,7 @@ class TestExecutor:
                 ]
 
                 # Wait for all tasks
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                # Process results
-                for r in results:
-                    if isinstance(r, RequestResult):
-                        metrics_collector.add_result(r)
-                    elif isinstance(r, Exception):
-                        metrics_collector.add_result(RequestResult(
-                            request_number=0,
-                            latency_ms=0,
-                            error=str(r),
-                        ))
+                await asyncio.gather(*tasks, return_exceptions=True)
 
             finally:
                 if should_close:
@@ -231,6 +293,9 @@ class TestExecutor:
             metrics_collector.stop()
             result.metrics = metrics_collector.compute_metrics()
             result.requests_completed = metrics_collector.count
+
+            # Store sampled requests (sorted by request number)
+            result.sampled_requests = sorted(sampled_results, key=lambda r: r.request_number)
 
             # Check thresholds
             passed, failures = metrics_collector.check_thresholds(
