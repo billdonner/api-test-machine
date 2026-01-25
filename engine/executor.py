@@ -9,6 +9,7 @@ from uuid import UUID
 
 import httpx
 
+from engine.auth import AuthProvider
 from engine.metrics import MetricsCollector
 from engine.models import (
     HttpMethod,
@@ -90,6 +91,12 @@ class TestExecutor:
             # Set up template engine
             template_engine = TemplateEngine(variables=spec.variables)
 
+            # Set up auth headers
+            auth_headers: dict[str, str] = {}
+            if spec.auth:
+                auth_provider = AuthProvider(template_engine=template_engine)
+                auth_headers = await auth_provider.get_headers(spec.auth)
+
             # Set up metrics collector
             metrics_collector = MetricsCollector()
             metrics_collector.start()
@@ -133,8 +140,9 @@ class TestExecutor:
 
                         # Build request
                         url = template_engine.substitute(spec.url, request_num)
-                        headers = template_engine.substitute_dict(
-                            spec.headers, request_num
+                        headers = {**auth_headers}
+                        headers.update(
+                            template_engine.substitute_dict(spec.headers, request_num)
                         )
 
                         body = None

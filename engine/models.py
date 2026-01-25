@@ -1,11 +1,16 @@
 """Pydantic models for the test engine."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from engine.auth import AuthConfig, HttpUrl
 
 
 class HttpMethod(str, Enum):
@@ -62,6 +67,12 @@ class TestSpec(BaseModel):
 
     # Template variables (user-provided values)
     variables: dict[str, str] = Field(default_factory=dict)
+
+    # Authentication configuration
+    auth: "AuthConfig | None" = Field(
+        default=None,
+        description="Authentication configuration for requests"
+    )
 
 
 class RequestResult(BaseModel):
