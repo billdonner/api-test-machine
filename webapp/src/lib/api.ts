@@ -8,7 +8,8 @@ import type {
 	HealthResponse,
 	RequestDetail,
 	RunDetail,
-	RunListResponse
+	RunListResponse,
+	StorageStatus
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -77,6 +78,10 @@ class ApiClient {
 
 	async deleteRun(id: string): Promise<{ id: string; message: string }> {
 		return this.request('DELETE', `/api/v1/runs/${id}`);
+	}
+
+	async getStorageStatus(): Promise<StorageStatus> {
+		return this.request<StorageStatus>('GET', '/api/v1/storage/status');
 	}
 }
 

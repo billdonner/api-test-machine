@@ -136,3 +136,42 @@ export interface HealthResponse {
 	version: string;
 	timestamp: string;
 }
+
+// Storage status types
+export interface RunsByDay {
+	date: string;
+	count: number;
+	passed: number;
+	failed: number;
+}
+
+export interface RunsByStatus {
+	status: string;
+	count: number;
+}
+
+export interface TopTest {
+	name: string;
+	run_count: number;
+	passed: number;
+	failed: number;
+	last_run: string | null;
+}
+
+export interface StorageStatus {
+	storage_type: string;
+	database_path: string | null;
+	database_size_bytes: number | null;
+	database_size_human: string | null;
+	sqlite_version: string | null;
+	total_runs: number;
+	runs_by_status: RunsByStatus[];
+	runs_by_day: RunsByDay[];
+	total_requests_stored: number;
+	avg_requests_per_run: number;
+	oldest_run_date: string | null;
+	newest_run_date: string | null;
+	top_tests: TopTest[];
+	avg_run_duration_seconds: number | null;
+	total_data_transferred_bytes: number;
+}

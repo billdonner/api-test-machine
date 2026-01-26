@@ -18,6 +18,7 @@ from api.models import (
     RunDetail,
     RunListResponse,
     RunSummary,
+    StorageStatusResponse,
 )
 from api.storage_base import StorageInterface
 from engine.executor import TestExecutor
@@ -26,6 +27,7 @@ from engine.models import RunResult, RunStatus
 # Create routers
 health_router = APIRouter(tags=["health"])
 runs_router = APIRouter(prefix="/runs", tags=["runs"])
+storage_router = APIRouter(prefix="/storage", tags=["storage"])
 
 # Shared state (initialized in app lifespan)
 executor: TestExecutor | None = None
@@ -359,3 +361,18 @@ async def delete_run(
         )
 
     return DeleteRunResponse(id=run_id)
+
+
+# Storage status endpoint
+@storage_router.get(
+    "/status",
+    response_model=StorageStatusResponse,
+    responses={401: {"model": ErrorResponse}},
+)
+async def get_storage_status(
+    api_key: ApiKeyDep,
+) -> StorageStatusResponse:
+    """Get detailed storage status and statistics."""
+    store = get_storage()
+    stats = await store.get_detailed_stats()
+    return StorageStatusResponse(**stats)

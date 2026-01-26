@@ -123,3 +123,45 @@ class ErrorResponse(BaseModel):
     """Standard error response."""
     error: str
     detail: str | None = None
+
+
+# Storage status models
+class RunsByDay(BaseModel):
+    """Runs count by day."""
+    date: str
+    count: int
+    passed: int
+    failed: int
+
+
+class RunsByStatus(BaseModel):
+    """Runs grouped by status."""
+    status: str
+    count: int
+
+
+class StorageStatusResponse(BaseModel):
+    """Detailed storage status response."""
+    storage_type: str
+    database_path: str | None
+    database_size_bytes: int | None
+    database_size_human: str | None
+    sqlite_version: str | None
+
+    # Counts
+    total_runs: int
+    runs_by_status: list[RunsByStatus]
+    runs_by_day: list[RunsByDay]
+
+    # Storage metrics
+    total_requests_stored: int
+    avg_requests_per_run: float
+    oldest_run_date: datetime | None
+    newest_run_date: datetime | None
+
+    # Top tests by run count
+    top_tests: list[dict]
+
+    # Performance metrics
+    avg_run_duration_seconds: float | None
+    total_data_transferred_bytes: int

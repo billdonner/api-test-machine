@@ -1,14 +1,16 @@
 """SQLite-based persistent storage for run results."""
 
 import os
+import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.database import DatabaseManager, RunRecord
+from api.database import DatabaseManager, RunRecord, get_sync_database_url
 from engine.models import RunResult, RunStatus
 
 
@@ -233,3 +235,191 @@ class SQLiteStorage:
                 "storage_type": "sqlite",
                 "database_url": self.db.database_url,
             }
+
+    async def get_detailed_stats(self) -> dict:
+        """Get detailed storage statistics for status page.
+
+        Returns:
+            Comprehensive dictionary with storage stats
+        """
+        await self.init()
+
+        # Get database file info
+        db_path = None
+        db_size = None
+        db_size_human = None
+        sqlite_version = None
+
+        # Extract path from URL
+        url = self.db.database_url
+        if "sqlite" in url:
+            # Extract path from sqlite:///path or sqlite+aiosqlite:///path
+            path_part = url.split("///")[-1]
+            db_path = path_part
+            if os.path.exists(path_part):
+                db_size = os.path.getsize(path_part)
+                db_size_human = self._format_size(db_size)
+
+            # Get SQLite version
+            try:
+                sqlite_version = sqlite3.sqlite_version
+            except Exception:
+                pass
+
+        async with self.db.get_session() as session:
+            # Total runs
+            total_result = await session.execute(
+                select(func.count(RunRecord.id))
+            )
+            total_runs = total_result.scalar() or 0
+
+            # Runs by status
+            runs_by_status = []
+            for status in RunStatus:
+                result = await session.execute(
+                    select(func.count(RunRecord.id)).where(
+                        RunRecord.status == status.value
+                    )
+                )
+                count = result.scalar() or 0
+                if count > 0:
+                    runs_by_status.append({
+                        "status": status.value,
+                        "count": count
+                    })
+
+            # Runs by day (last 30 days)
+            runs_by_day = []
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+            # Get all runs from last 30 days grouped by date
+            result = await session.execute(
+                select(
+                    func.date(RunRecord.created_at).label("date"),
+                    func.count(RunRecord.id).label("count"),
+                    func.sum(
+                        case(
+                            (RunRecord.passed == True, 1),
+                            else_=0
+                        )
+                    ).label("passed"),
+                    func.sum(
+                        case(
+                            (RunRecord.passed == False, 1),
+                            else_=0
+                        )
+                    ).label("failed")
+                ).where(
+                    RunRecord.created_at >= thirty_days_ago
+                ).group_by(
+                    func.date(RunRecord.created_at)
+                ).order_by(
+                    func.date(RunRecord.created_at)
+                )
+            )
+            for row in result:
+                runs_by_day.append({
+                    "date": str(row.date) if row.date else "",
+                    "count": row.count or 0,
+                    "passed": row.passed or 0,
+                    "failed": row.failed or 0
+                })
+
+            # Total requests stored
+            total_requests_result = await session.execute(
+                select(func.sum(RunRecord.requests_completed))
+            )
+            total_requests = total_requests_result.scalar() or 0
+
+            # Average requests per run
+            avg_requests = total_requests / total_runs if total_runs > 0 else 0
+
+            # Oldest and newest run dates
+            oldest_result = await session.execute(
+                select(func.min(RunRecord.created_at))
+            )
+            oldest_run_date = oldest_result.scalar()
+
+            newest_result = await session.execute(
+                select(func.max(RunRecord.created_at))
+            )
+            newest_run_date = newest_result.scalar()
+
+            # Top tests by run count
+            top_tests_result = await session.execute(
+                select(
+                    RunRecord.name,
+                    func.count(RunRecord.id).label("run_count"),
+                    func.sum(
+                        case(
+                            (RunRecord.passed == True, 1),
+                            else_=0
+                        )
+                    ).label("passed"),
+                    func.sum(
+                        case(
+                            (RunRecord.passed == False, 1),
+                            else_=0
+                        )
+                    ).label("failed"),
+                    func.max(RunRecord.created_at).label("last_run")
+                ).group_by(
+                    RunRecord.name
+                ).order_by(
+                    func.count(RunRecord.id).desc()
+                ).limit(10)
+            )
+            top_tests = []
+            for row in top_tests_result:
+                top_tests.append({
+                    "name": row.name,
+                    "run_count": row.run_count,
+                    "passed": row.passed or 0,
+                    "failed": row.failed or 0,
+                    "last_run": row.last_run.isoformat() if row.last_run else None
+                })
+
+            # Average run duration for completed runs
+            avg_duration_result = await session.execute(
+                select(
+                    func.avg(
+                        func.julianday(RunRecord.completed_at) -
+                        func.julianday(RunRecord.started_at)
+                    ) * 86400  # Convert days to seconds
+                ).where(
+                    RunRecord.status == "completed",
+                    RunRecord.started_at.isnot(None),
+                    RunRecord.completed_at.isnot(None)
+                )
+            )
+            avg_duration = avg_duration_result.scalar()
+
+            # Total data transferred (estimate from completed requests * avg response size)
+            # This is a rough estimate
+            total_data = total_requests * 1024  # Rough estimate: 1KB per request
+
+            return {
+                "storage_type": "sqlite",
+                "database_path": db_path,
+                "database_size_bytes": db_size,
+                "database_size_human": db_size_human,
+                "sqlite_version": sqlite_version,
+                "total_runs": total_runs,
+                "runs_by_status": runs_by_status,
+                "runs_by_day": runs_by_day,
+                "total_requests_stored": total_requests,
+                "avg_requests_per_run": round(avg_requests, 1),
+                "oldest_run_date": oldest_run_date,
+                "newest_run_date": newest_run_date,
+                "top_tests": top_tests,
+                "avg_run_duration_seconds": round(avg_duration, 2) if avg_duration else None,
+                "total_data_transferred_bytes": total_data,
+            }
+
+    def _format_size(self, size_bytes: int) -> str:
+        """Format bytes as human-readable size."""
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} TB"

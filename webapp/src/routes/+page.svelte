@@ -153,7 +153,14 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold">Dashboard</h1>
-		<a href="/new" class="btn btn-primary">New Test</a>
+		<div class="flex items-center gap-3">
+			<a href="/storage" class="text-slate-400 hover:text-white transition-colors" title="Storage Status">
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+				</svg>
+			</a>
+			<a href="/new" class="btn btn-primary">New Test</a>
+		</div>
 	</div>
 
 	<!-- Stats Overview -->

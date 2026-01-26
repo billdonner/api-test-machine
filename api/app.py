@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import health_router, init_dependencies, runs_router
+from api.routes import health_router, init_dependencies, runs_router, storage_router
 from api.storage_base import create_storage
 from engine.executor import TestExecutor
 
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(runs_router, prefix="/api/v1")
+    app.include_router(storage_router, prefix="/api/v1")
 
     return app
 
