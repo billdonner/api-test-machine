@@ -6,12 +6,14 @@ A REST API load testing system with multiple interfaces (CLI, MCP, WebApp) built
 
 - **Async Test Engine**: High-performance HTTP load testing with httpx
 - **Multi-Endpoint Testing**: Test multiple URLs in a single run with distribution strategies
+- **SQLite Persistence**: Durable storage with Alembic migrations (JSON fallback available)
 - **Rate Limiting**: Token bucket algorithm for controlled request rates
 - **Template Variables**: Dynamic URL and body substitution (`{{uuid}}`, `{{timestamp}}`, etc.)
 - **Authentication**: Bearer tokens, API keys, and Basic auth support
 - **Metrics**: Latency percentiles (P50/P90/P95/P99), throughput, error rates
 - **Per-Endpoint Metrics**: Individual metrics for each endpoint in multi-endpoint tests
 - **Thresholds**: Pass/fail criteria based on latency and error rates
+- **Storage Status Dashboard**: Visual database metrics and health monitoring
 - **Multiple Interfaces**:
   - REST API for programmatic access
   - CLI for command-line usage
@@ -27,12 +29,15 @@ A REST API load testing system with multiple interfaces (CLI, MCP, WebApp) built
 # Clone and install
 cd api-test-machine
 pip install -e ".[dev]"
+
+# Run database migrations
+alembic upgrade head
 ```
 
 ### Start the API Server
 
 ```bash
-uvicorn api.main:app --reload
+uvicorn api.app:app --reload
 ```
 
 ### Run a Test via CLI
@@ -111,6 +116,44 @@ Each endpoint supports:
 }
 ```
 
+## Storage
+
+API Test Machine uses SQLite for persistent storage by default.
+
+### Database Location
+
+- Default: `./data/atm.db`
+- Configure via `ATM_DATA_DIR` environment variable
+
+### Migrations
+
+```bash
+# Apply migrations
+alembic upgrade head
+
+# Create new migration (after model changes)
+alembic revision --autogenerate -m "Description"
+
+# Check current version
+alembic current
+```
+
+### Storage Backend Options
+
+| Backend | Config | Use Case |
+|---------|--------|----------|
+| SQLite (default) | `ATM_STORAGE_TYPE=sqlite` | Production, persistence |
+| JSON files | `ATM_STORAGE_TYPE=json` | Development, debugging |
+
+### Storage Status Dashboard
+
+View database metrics at `/storage` in the webapp:
+- Database size and SQLite version
+- Runs by status (chart)
+- Runs per day (30-day chart)
+- Top tests by run count
+- Storage health indicators
+
 ## CLI Commands
 
 ```bash
@@ -137,6 +180,7 @@ atm list --limit 10 --status completed
 | GET | `/api/v1/runs/{id}` | Yes | Get run status/metrics |
 | POST | `/api/v1/runs/{id}/cancel` | Yes | Cancel running test |
 | DELETE | `/api/v1/runs/{id}` | Yes | Delete a run |
+| GET | `/api/v1/storage/status` | Yes | Get storage statistics |
 
 ## Test Specification
 
@@ -220,6 +264,9 @@ atm list --limit 10 --status completed
 | `ATM_API_URL` | API server URL for CLI/MCP (default: http://localhost:8000) |
 | `ATM_API_KEY` | API key for CLI/MCP clients |
 | `ATM_DATA_DIR` | Data directory (default: ./data) |
+| `ATM_STORAGE_TYPE` | Storage backend: `sqlite` (default) or `json` |
+| `ATM_DATABASE_URL` | Custom database URL (overrides default SQLite) |
+| `ATM_DB_ECHO` | Set to `true` for SQL query logging |
 
 ## MCP Server
 
@@ -275,19 +322,34 @@ api-test-machine/
 │   ├── auth.py      # Authentication providers
 │   └── templating.py # Variable substitution
 ├── api/             # FastAPI Control API
+│   ├── app.py       # Application factory
+│   ├── routes.py    # API endpoints
+│   ├── models.py    # Request/response schemas
+│   ├── database.py  # SQLAlchemy models
+│   ├── sqlite_storage.py  # SQLite storage backend
+│   └── storage_base.py    # Storage interface
 ├── cli/             # Typer CLI
 ├── agent/           # Scheduler and orchestration
 ├── mcp_server/      # MCP server for LLM agents
 ├── webapp/          # SvelteKit dashboard
+│   └── src/routes/
+│       ├── +page.svelte      # Dashboard
+│       ├── new/              # Create test
+│       ├── runs/[id]/        # Run details
+│       ├── edit/[id]/        # Edit test
+│       └── storage/          # Storage status
+├── migrations/      # Alembic database migrations
 ├── tests/           # Test suite
 ├── docs/            # Documentation
 └── data/            # Runtime data (gitignored)
+    └── atm.db       # SQLite database
 ```
 
 ## Documentation
 
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [MCP User Guide](docs/MCP_GUIDE.md)
+- [Development Plan](docs/PLAN.md)
 
 ## License
 

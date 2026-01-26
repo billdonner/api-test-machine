@@ -260,6 +260,8 @@ Configure the MCP server behavior:
 |----------|---------|-------------|
 | `ATM_API_URL` | http://localhost:8000 | API server URL |
 | `ATM_API_KEY` | (none) | API authentication key |
+| `ATM_DATA_DIR` | ./data | Data directory for storage |
+| `ATM_STORAGE_TYPE` | sqlite | Storage backend (sqlite or json) |
 
 ## Troubleshooting
 
