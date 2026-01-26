@@ -344,7 +344,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-700">
-					{#each $groupedRuns as group}
+					{#each $groupedRuns as group (group.name)}
 						<!-- Group header row -->
 						<tr
 							class="hover:bg-slate-700/50 cursor-pointer"
@@ -425,7 +425,7 @@
 						</tr>
 						<!-- Expanded runs -->
 						{#if $expandedGroups.has(group.name)}
-							{#each group.runs as run, i}
+							{#each group.runs as run, i (run.id)}
 								<tr class="bg-slate-800/50 hover:bg-slate-700/50">
 									<td class="py-2"></td>
 									<td class="py-2"></td>
