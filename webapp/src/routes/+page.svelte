@@ -262,7 +262,6 @@
 					Run All ({enabledCount})
 				{/if}
 			</button>
-			<a href="/new" class="btn btn-primary">New Test</a>
 		</div>
 	</div>
 
