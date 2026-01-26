@@ -202,10 +202,10 @@
 		try {
 			runningAll = true;
 			const response = await api.runAllEnabledTests();
-			// Store results in session storage for the batch page
+			// Store results in session storage for the batch page (can be viewed later)
 			sessionStorage.setItem('batchResults', JSON.stringify(response));
-			// Navigate to batch results page
-			goto('/batch');
+			// Reload runs to show progress - dashboard will update via polling
+			await loadRuns();
 		} catch (e) {
 			console.error('Failed to run all tests:', e);
 			alert('Failed to run tests: ' + (e instanceof Error ? e.message : 'Unknown error'));

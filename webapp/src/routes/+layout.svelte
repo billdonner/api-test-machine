@@ -27,7 +27,6 @@
 			</a>
 
 			<nav class="flex items-center gap-4">
-				<a href="/" class="text-slate-300 hover:text-white">Dashboard</a>
 				<a href="/new" class="btn btn-primary">New Test</a>
 
 				<button
