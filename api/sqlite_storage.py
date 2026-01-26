@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.database import DatabaseManager, RunRecord, get_sync_database_url
+from api.database import DatabaseManager, RunRecord, TestConfig, get_sync_database_url
 from engine.models import RunResult, RunStatus
 
 
@@ -423,3 +423,171 @@ class SQLiteStorage:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024
         return f"{size_bytes:.1f} TB"
+
+    # Test config management methods
+
+    async def save_test_config(self, name: str, spec: dict, enabled: bool = True) -> None:
+        """Save or update a test configuration.
+
+        Args:
+            name: Test name (unique identifier)
+            spec: Test specification as dict
+            enabled: Whether the test is enabled for batch runs
+        """
+        await self.init()
+
+        async with self.db.get_session() as session:
+            existing = await session.get(TestConfig, name)
+
+            if existing:
+                existing.spec_json = spec
+                existing.enabled = enabled
+                existing.updated_at = datetime.utcnow()
+            else:
+                config = TestConfig(
+                    name=name,
+                    enabled=enabled,
+                    spec_json=spec,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                session.add(config)
+
+            await session.commit()
+
+    async def get_test_config(self, name: str) -> dict | None:
+        """Get a test configuration by name.
+
+        Args:
+            name: Test name
+
+        Returns:
+            Dict with name, enabled, spec_json or None
+        """
+        await self.init()
+
+        async with self.db.get_session() as session:
+            config = await session.get(TestConfig, name)
+            if config:
+                return {
+                    "name": config.name,
+                    "enabled": config.enabled,
+                    "spec": config.spec_json,
+                    "created_at": config.created_at,
+                    "updated_at": config.updated_at,
+                }
+            return None
+
+    async def set_test_enabled(self, name: str, enabled: bool) -> bool:
+        """Set whether a test is enabled.
+
+        Args:
+            name: Test name
+            enabled: Whether to enable the test
+
+        Returns:
+            True if updated, False if not found
+        """
+        await self.init()
+
+        async with self.db.get_session() as session:
+            config = await session.get(TestConfig, name)
+            if config:
+                config.enabled = enabled
+                config.updated_at = datetime.utcnow()
+                await session.commit()
+                return True
+            return False
+
+    async def list_test_configs(self, enabled_only: bool = False) -> list[dict]:
+        """List all test configurations.
+
+        Args:
+            enabled_only: If True, only return enabled tests
+
+        Returns:
+            List of test config dicts
+        """
+        await self.init()
+
+        async with self.db.get_session() as session:
+            query = select(TestConfig)
+            if enabled_only:
+                query = query.where(TestConfig.enabled == True)
+            query = query.order_by(TestConfig.name)
+
+            result = await session.execute(query)
+            configs = result.scalars().all()
+
+            return [
+                {
+                    "name": c.name,
+                    "enabled": c.enabled,
+                    "spec": c.spec_json,
+                    "created_at": c.created_at,
+                    "updated_at": c.updated_at,
+                }
+                for c in configs
+            ]
+
+    async def delete_test_config(self, name: str) -> bool:
+        """Delete a test configuration.
+
+        Args:
+            name: Test name
+
+        Returns:
+            True if deleted, False if not found
+        """
+        await self.init()
+
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                delete(TestConfig).where(TestConfig.name == name)
+            )
+            await session.commit()
+            return result.rowcount > 0
+
+    async def sync_test_configs_from_runs(self) -> int:
+        """Sync test configs from existing runs.
+
+        Creates test configs for each unique test name in runs,
+        using the most recent spec for each test.
+
+        Returns:
+            Number of configs created/updated
+        """
+        await self.init()
+
+        async with self.db.get_session() as session:
+            # Get distinct test names with their most recent spec
+            from sqlalchemy import desc
+
+            query = select(
+                RunRecord.name,
+                RunRecord.spec_json
+            ).order_by(
+                RunRecord.name,
+                desc(RunRecord.created_at)
+            ).distinct(RunRecord.name)
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            count = 0
+            for row in rows:
+                name, spec_json = row
+                existing = await session.get(TestConfig, name)
+                if not existing:
+                    config = TestConfig(
+                        name=name,
+                        enabled=True,
+                        spec_json=spec_json,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    session.add(config)
+                    count += 1
+
+            await session.commit()
+            return count

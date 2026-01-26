@@ -37,6 +37,25 @@ class Base(DeclarativeBase):
     pass
 
 
+class TestConfig(Base):
+    """Database model for saved test configurations."""
+
+    __tablename__ = "test_configs"
+
+    # Primary key is the test name
+    name = Column(String(256), primary_key=True)
+
+    # Enabled flag for "Run All" functionality
+    enabled = Column(Boolean, default=True, nullable=False)
+
+    # Latest test specification
+    spec_json = Column(JSON, nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class RunRecord(Base):
     """Database model for test runs."""
 

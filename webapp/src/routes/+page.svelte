@@ -13,13 +13,19 @@
 		loadRuns
 	} from '$lib/stores';
 	import { api } from '$lib/api';
-	import type { RunStatus, RunSummary } from '$lib/types';
+	import type { RunStatus, RunSummary, TestConfig } from '$lib/types';
 	import RunsPerDayChart from '$lib/components/charts/RunsPerDayChart.svelte';
 
 	const statuses: (RunStatus | null)[] = [null, 'pending', 'running', 'completed', 'cancelled', 'failed'];
 
 	// Track which groups are expanded
 	const expandedGroups = writable<Set<string>>(new Set());
+
+	// Test configs for enabled/disabled status
+	let testConfigs: Map<string, TestConfig> = new Map();
+	let configsLoading = false;
+	let runningAll = false;
+	let enabledCount = 0;
 
 	// Group runs by name
 	interface RunGroup {
@@ -28,6 +34,7 @@
 		latestRun: RunSummary;
 		passCount: number;
 		failCount: number;
+		enabled: boolean;
 	}
 
 	const groupedRuns = derived(runs, ($runs) => {
@@ -46,12 +53,14 @@
 				const bTime = b.started_at ? new Date(b.started_at).getTime() : 0;
 				return bTime - aTime;
 			});
+			const config = testConfigs.get(name);
 			result.push({
 				name,
 				runs: groupRuns,
 				latestRun: groupRuns[0],
 				passCount: groupRuns.filter(r => r.passed === true).length,
-				failCount: groupRuns.filter(r => r.passed === false).length
+				failCount: groupRuns.filter(r => r.passed === false).length,
+				enabled: config?.enabled ?? true
 			});
 		}
 		// Sort groups by latest run time
@@ -60,6 +69,8 @@
 			const bTime = b.latestRun.started_at ? new Date(b.latestRun.started_at).getTime() : 0;
 			return bTime - aTime;
 		});
+		// Update enabled count
+		enabledCount = result.filter(g => g.enabled).length;
 		return result;
 	});
 
@@ -137,8 +148,75 @@
 		}
 	}
 
+	async function loadTestConfigs() {
+		try {
+			configsLoading = true;
+			const response = await api.listTestConfigs();
+			testConfigs = new Map(response.configs.map(c => [c.name, c]));
+			// Trigger reactivity
+			testConfigs = testConfigs;
+		} catch (e) {
+			console.error('Failed to load test configs:', e);
+		} finally {
+			configsLoading = false;
+		}
+	}
+
+	async function syncTestConfigs() {
+		try {
+			configsLoading = true;
+			const result = await api.syncTestConfigs();
+			await loadTestConfigs();
+			if (result.synced > 0) {
+				alert(`Synced ${result.synced} test configuration(s) from existing runs.`);
+			}
+		} catch (e) {
+			console.error('Failed to sync configs:', e);
+			alert('Failed to sync test configurations');
+		} finally {
+			configsLoading = false;
+		}
+	}
+
+	async function toggleTestEnabled(name: string, enabled: boolean) {
+		try {
+			await api.setTestEnabled(name, enabled);
+			const config = testConfigs.get(name);
+			if (config) {
+				config.enabled = enabled;
+				testConfigs = testConfigs; // Trigger reactivity
+			}
+		} catch (e) {
+			console.error('Failed to toggle test:', e);
+			alert('Failed to update test status');
+		}
+	}
+
+	async function runAllEnabledTests() {
+		if (enabledCount === 0) {
+			alert('No tests are enabled. Enable some tests first.');
+			return;
+		}
+		if (!confirm(`Run all ${enabledCount} enabled test(s)?`)) return;
+
+		try {
+			runningAll = true;
+			const response = await api.runAllEnabledTests();
+			// Store results in session storage for the batch page
+			sessionStorage.setItem('batchResults', JSON.stringify(response));
+			// Navigate to batch results page
+			goto('/batch');
+		} catch (e) {
+			console.error('Failed to run all tests:', e);
+			alert('Failed to run tests: ' + (e instanceof Error ? e.message : 'Unknown error'));
+		} finally {
+			runningAll = false;
+		}
+	}
+
 	onMount(() => {
 		startPolling(3000);
+		loadTestConfigs();
 	});
 
 	onDestroy(() => {
@@ -154,11 +232,36 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold">Dashboard</h1>
 		<div class="flex items-center gap-3">
+			<button
+				on:click={syncTestConfigs}
+				disabled={configsLoading}
+				class="text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+				title="Sync test configs from runs"
+			>
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+				</svg>
+			</button>
 			<a href="/storage" class="text-slate-400 hover:text-white transition-colors" title="Storage Status">
 				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
 				</svg>
 			</a>
+			<button
+				on:click={runAllEnabledTests}
+				disabled={runningAll || enabledCount === 0}
+				class="btn bg-green-600 hover:bg-green-500 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+			>
+				{#if runningAll}
+					<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					</svg>
+					Running...
+				{:else}
+					Run All ({enabledCount})
+				{/if}
+			</button>
 			<a href="/new" class="btn btn-primary">New Test</a>
 		</div>
 	</div>
@@ -227,6 +330,11 @@
 				<thead>
 					<tr class="text-left text-slate-400 text-sm border-b border-slate-700">
 						<th class="pb-3 font-medium w-8"></th>
+						<th class="pb-3 font-medium w-12" title="Enable/disable test for batch runs">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+							</svg>
+						</th>
 						<th class="pb-3 font-medium">Name</th>
 						<th class="pb-3 font-medium">Runs</th>
 						<th class="pb-3 font-medium">Latest Status</th>
@@ -251,6 +359,15 @@
 										{$expandedGroups.has(group.name) ? '▼' : '▶'}
 									</span>
 								{/if}
+							</td>
+							<td class="py-3 text-center" on:click|stopPropagation on:keydown|stopPropagation>
+								<input
+									type="checkbox"
+									checked={group.enabled}
+									on:change={(e) => toggleTestEnabled(group.name, e.currentTarget.checked)}
+									class="w-4 h-4 rounded border-slate-500 bg-slate-700 text-green-500 focus:ring-green-500 focus:ring-offset-slate-800 cursor-pointer"
+									title={group.enabled ? 'Enabled for batch runs' : 'Disabled for batch runs'}
+								/>
 							</td>
 							<td class="py-3">
 								<a
@@ -310,6 +427,7 @@
 						{#if $expandedGroups.has(group.name)}
 							{#each group.runs as run, i}
 								<tr class="bg-slate-800/50 hover:bg-slate-700/50">
+									<td class="py-2"></td>
 									<td class="py-2"></td>
 									<td class="py-2 pl-4">
 										<a href="/runs/{run.id}" class="text-blue-400/80 hover:underline text-sm">

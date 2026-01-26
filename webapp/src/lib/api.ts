@@ -3,13 +3,15 @@
  */
 
 import type {
+	BatchRunResponse,
 	CreateRunRequest,
 	CreateRunResponse,
 	HealthResponse,
 	RequestDetail,
 	RunDetail,
 	RunListResponse,
-	StorageStatus
+	StorageStatus,
+	TestConfigList
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -82,6 +84,25 @@ class ApiClient {
 
 	async getStorageStatus(): Promise<StorageStatus> {
 		return this.request<StorageStatus>('GET', '/api/v1/storage/status');
+	}
+
+	async listTestConfigs(enabledOnly = false): Promise<TestConfigList> {
+		const path = enabledOnly
+			? '/api/v1/tests?enabled_only=true'
+			: '/api/v1/tests';
+		return this.request<TestConfigList>('GET', path);
+	}
+
+	async setTestEnabled(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean; message: string }> {
+		return this.request('POST', `/api/v1/tests/${encodeURIComponent(name)}/enabled`, { enabled });
+	}
+
+	async syncTestConfigs(): Promise<{ message: string; synced: number }> {
+		return this.request('POST', '/api/v1/tests/sync');
+	}
+
+	async runAllEnabledTests(): Promise<BatchRunResponse> {
+		return this.request<BatchRunResponse>('POST', '/api/v1/tests/run-all');
 	}
 }
 

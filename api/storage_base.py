@@ -50,6 +50,30 @@ class StorageInterface(Protocol):
         """Get detailed storage statistics."""
         ...
 
+    async def save_test_config(self, name: str, spec: dict, enabled: bool = True) -> None:
+        """Save or update a test configuration."""
+        ...
+
+    async def get_test_config(self, name: str) -> dict | None:
+        """Get a test configuration by name."""
+        ...
+
+    async def set_test_enabled(self, name: str, enabled: bool) -> bool:
+        """Set whether a test is enabled."""
+        ...
+
+    async def list_test_configs(self, enabled_only: bool = False) -> list[dict]:
+        """List all test configurations."""
+        ...
+
+    async def delete_test_config(self, name: str) -> bool:
+        """Delete a test configuration."""
+        ...
+
+    async def sync_test_configs_from_runs(self) -> int:
+        """Sync test configs from existing runs."""
+        ...
+
 
 class AsyncJSONStorage:
     """Async wrapper around the synchronous JSON file storage.
@@ -205,6 +229,107 @@ class AsyncJSONStorage:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024
         return f"{size_bytes:.1f} TB"
+
+    def _get_configs_file(self) -> Path:
+        """Get path to test configs JSON file."""
+        return self._storage.data_dir / "test_configs.json"
+
+    def _load_configs(self) -> dict:
+        """Load test configs from JSON file."""
+        configs_file = self._get_configs_file()
+        if configs_file.exists():
+            import json
+            with open(configs_file) as f:
+                return json.load(f)
+        return {}
+
+    def _save_configs(self, configs: dict) -> None:
+        """Save test configs to JSON file."""
+        import json
+        configs_file = self._get_configs_file()
+        with open(configs_file, "w") as f:
+            json.dump(configs, f, indent=2, default=str)
+
+    async def save_test_config(self, name: str, spec: dict, enabled: bool = True) -> None:
+        """Save or update a test configuration."""
+        configs = self._load_configs()
+        now = datetime.utcnow().isoformat()
+        if name in configs:
+            configs[name]["spec"] = spec
+            configs[name]["enabled"] = enabled
+            configs[name]["updated_at"] = now
+        else:
+            configs[name] = {
+                "name": name,
+                "enabled": enabled,
+                "spec": spec,
+                "created_at": now,
+                "updated_at": now,
+            }
+        self._save_configs(configs)
+
+    async def get_test_config(self, name: str) -> dict | None:
+        """Get a test configuration by name."""
+        configs = self._load_configs()
+        return configs.get(name)
+
+    async def set_test_enabled(self, name: str, enabled: bool) -> bool:
+        """Set whether a test is enabled."""
+        configs = self._load_configs()
+        if name in configs:
+            configs[name]["enabled"] = enabled
+            configs[name]["updated_at"] = datetime.utcnow().isoformat()
+            self._save_configs(configs)
+            return True
+        return False
+
+    async def list_test_configs(self, enabled_only: bool = False) -> list[dict]:
+        """List all test configurations."""
+        configs = self._load_configs()
+        result = []
+        for name, config in sorted(configs.items()):
+            if enabled_only and not config.get("enabled", True):
+                continue
+            result.append(config)
+        return result
+
+    async def delete_test_config(self, name: str) -> bool:
+        """Delete a test configuration."""
+        configs = self._load_configs()
+        if name in configs:
+            del configs[name]
+            self._save_configs(configs)
+            return True
+        return False
+
+    async def sync_test_configs_from_runs(self) -> int:
+        """Sync test configs from existing runs."""
+        configs = self._load_configs()
+        runs, _ = self._storage.list_runs(limit=1000)
+
+        # Group by name and get most recent
+        by_name = {}
+        for run in runs:
+            name = run.spec.name
+            if name not in by_name or (run.created_at and run.created_at > by_name[name].created_at):
+                by_name[name] = run
+
+        count = 0
+        now = datetime.utcnow().isoformat()
+        for name, run in by_name.items():
+            if name not in configs:
+                configs[name] = {
+                    "name": name,
+                    "enabled": True,
+                    "spec": run.spec.model_dump(mode="json"),
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                count += 1
+
+        if count > 0:
+            self._save_configs(configs)
+        return count
 
 
 def create_storage(data_dir: str | Path | None = None) -> StorageInterface:

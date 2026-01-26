@@ -140,6 +140,60 @@ class RunsByStatus(BaseModel):
     count: int
 
 
+class TestConfigResponse(BaseModel):
+    """Test configuration with enabled status."""
+    name: str
+    enabled: bool
+    spec: TestSpec
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+class TestConfigListResponse(BaseModel):
+    """List of test configurations."""
+    configs: list[TestConfigResponse]
+    total: int
+
+
+class SetEnabledRequest(BaseModel):
+    """Request to set test enabled status."""
+    enabled: bool
+
+
+class SetEnabledResponse(BaseModel):
+    """Response after setting enabled status."""
+    name: str
+    enabled: bool
+    message: str
+
+
+class BatchRunRequest(BaseModel):
+    """Request to run all enabled tests."""
+    pass  # No body needed
+
+
+class BatchRunResult(BaseModel):
+    """Result of a single test in a batch run."""
+    name: str
+    run_id: UUID
+    status: RunStatus
+    passed: bool | None = None
+    error_message: str | None = None
+    latency_p95_ms: float | None = None
+    requests_completed: int = 0
+    total_requests: int = 0
+
+
+class BatchRunResponse(BaseModel):
+    """Response from batch run."""
+    batch_id: str
+    total_tests: int
+    started_at: datetime
+    completed_at: datetime | None = None
+    results: list[BatchRunResult] = Field(default_factory=list)
+    summary: dict = Field(default_factory=dict)
+
+
 class StorageStatusResponse(BaseModel):
     """Detailed storage status response."""
     storage_type: str

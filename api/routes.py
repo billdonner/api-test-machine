@@ -7,6 +7,9 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from api.auth import ApiKeyDep
 from api.models import (
+    BatchRunRequest,
+    BatchRunResponse,
+    BatchRunResult,
     CancelRunResponse,
     CreateRunRequest,
     CreateRunResponse,
@@ -18,16 +21,24 @@ from api.models import (
     RunDetail,
     RunListResponse,
     RunSummary,
+    SetEnabledRequest,
+    SetEnabledResponse,
     StorageStatusResponse,
+    TestConfigListResponse,
+    TestConfigResponse,
 )
 from api.storage_base import StorageInterface
 from engine.executor import TestExecutor
 from engine.models import RunResult, RunStatus
 
+from datetime import datetime
+from uuid import uuid4
+
 # Create routers
 health_router = APIRouter(tags=["health"])
 runs_router = APIRouter(prefix="/runs", tags=["runs"])
 storage_router = APIRouter(prefix="/storage", tags=["storage"])
+tests_router = APIRouter(prefix="/tests", tags=["tests"])
 
 # Shared state (initialized in app lifespan)
 executor: TestExecutor | None = None
@@ -376,3 +387,192 @@ async def get_storage_status(
     store = get_storage()
     stats = await store.get_detailed_stats()
     return StorageStatusResponse(**stats)
+
+
+# Test configuration endpoints
+@tests_router.get(
+    "",
+    response_model=TestConfigListResponse,
+    responses={401: {"model": ErrorResponse}},
+)
+async def list_test_configs(
+    api_key: ApiKeyDep,
+    enabled_only: bool = Query(default=False),
+) -> TestConfigListResponse:
+    """List all saved test configurations."""
+    store = get_storage()
+    configs = await store.list_test_configs(enabled_only=enabled_only)
+
+    from engine.models import TestSpec
+
+    config_responses = []
+    for c in configs:
+        try:
+            spec = TestSpec.model_validate(c["spec"])
+            config_responses.append(TestConfigResponse(
+                name=c["name"],
+                enabled=c["enabled"],
+                spec=spec,
+                created_at=c.get("created_at"),
+                updated_at=c.get("updated_at"),
+            ))
+        except Exception:
+            # Skip invalid configs
+            continue
+
+    return TestConfigListResponse(configs=config_responses, total=len(config_responses))
+
+
+@tests_router.post(
+    "/{name}/enabled",
+    response_model=SetEnabledResponse,
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+async def set_test_enabled(
+    name: str,
+    request: SetEnabledRequest,
+    api_key: ApiKeyDep,
+) -> SetEnabledResponse:
+    """Enable or disable a test for batch runs."""
+    store = get_storage()
+
+    # Try to update existing config
+    updated = await store.set_test_enabled(name, request.enabled)
+
+    if not updated:
+        # Config doesn't exist - try to create from most recent run
+        runs, _ = await store.list_runs(limit=1000, name_filter=name)
+        if not runs:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Test '{name}' not found",
+            )
+
+        # Create config from most recent run
+        latest_run = runs[0]
+        await store.save_test_config(
+            name=name,
+            spec=latest_run.spec.model_dump(mode="json"),
+            enabled=request.enabled,
+        )
+
+    return SetEnabledResponse(
+        name=name,
+        enabled=request.enabled,
+        message=f"Test '{name}' {'enabled' if request.enabled else 'disabled'}",
+    )
+
+
+@tests_router.post(
+    "/sync",
+    responses={401: {"model": ErrorResponse}},
+)
+async def sync_test_configs(
+    api_key: ApiKeyDep,
+) -> dict:
+    """Sync test configs from existing runs.
+
+    Creates test configs for all unique test names that don't have one yet.
+    """
+    store = get_storage()
+    count = await store.sync_test_configs_from_runs()
+    return {"message": f"Synced {count} test configs", "synced": count}
+
+
+@tests_router.post(
+    "/run-all",
+    response_model=BatchRunResponse,
+    responses={401: {"model": ErrorResponse}},
+)
+async def run_all_enabled_tests(
+    api_key: ApiKeyDep,
+) -> BatchRunResponse:
+    """Run all enabled tests and return results."""
+    store = get_storage()
+    exec = get_executor()
+
+    # Get all enabled test configs
+    configs = await store.list_test_configs(enabled_only=True)
+
+    if not configs:
+        return BatchRunResponse(
+            batch_id=str(uuid4()),
+            total_tests=0,
+            started_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+            results=[],
+            summary={"message": "No enabled tests to run"},
+        )
+
+    batch_id = str(uuid4())
+    started_at = datetime.utcnow()
+    results: list[BatchRunResult] = []
+
+    from engine.models import TestSpec
+
+    for config in configs:
+        try:
+            spec = TestSpec.model_validate(config["spec"])
+
+            # Create initial result
+            result = RunResult(spec=spec, status=RunStatus.PENDING)
+            await store.save(result)
+
+            # Run the test synchronously (for batch reporting)
+            try:
+                final_result = await exec.run(spec, run_id=result.id)
+                await store.save(final_result)
+
+                results.append(BatchRunResult(
+                    name=config["name"],
+                    run_id=final_result.id,
+                    status=final_result.status,
+                    passed=final_result.passed,
+                    error_message=final_result.error_message,
+                    latency_p95_ms=final_result.metrics.latency_p95_ms,
+                    requests_completed=final_result.requests_completed,
+                    total_requests=spec.total_requests,
+                ))
+            except Exception as e:
+                result.status = RunStatus.FAILED
+                result.error_message = str(e)
+                await store.save(result)
+
+                results.append(BatchRunResult(
+                    name=config["name"],
+                    run_id=result.id,
+                    status=RunStatus.FAILED,
+                    passed=False,
+                    error_message=str(e),
+                    total_requests=spec.total_requests,
+                ))
+
+        except Exception as e:
+            # Invalid spec - skip but report
+            results.append(BatchRunResult(
+                name=config["name"],
+                run_id=uuid4(),
+                status=RunStatus.FAILED,
+                passed=False,
+                error_message=f"Invalid spec: {e}",
+            ))
+
+    completed_at = datetime.utcnow()
+
+    # Calculate summary
+    passed_count = sum(1 for r in results if r.passed is True)
+    failed_count = sum(1 for r in results if r.passed is False)
+
+    return BatchRunResponse(
+        batch_id=batch_id,
+        total_tests=len(results),
+        started_at=started_at,
+        completed_at=completed_at,
+        results=results,
+        summary={
+            "passed": passed_count,
+            "failed": failed_count,
+            "pass_rate": f"{(passed_count / len(results) * 100):.1f}%" if results else "N/A",
+            "duration_seconds": (completed_at - started_at).total_seconds(),
+        },
+    )
