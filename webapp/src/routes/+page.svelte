@@ -83,6 +83,15 @@
 		return { running, passed, failed };
 	});
 
+	// Get names of currently running tests
+	const runningTestNames = derived(runs, ($runs) => {
+		const names = $runs
+			.filter((r) => r.status === 'running')
+			.map((r) => r.name);
+		// Return unique names
+		return [...new Set(names)];
+	});
+
 	function toggleGroup(name: string) {
 		expandedGroups.update(set => {
 			const newSet = new Set(set);
@@ -233,7 +242,14 @@
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">Dashboard</h1>
+		<div class="flex items-center gap-3">
+			<h1 class="text-2xl font-bold">Dashboard</h1>
+			{#if $runningTestNames.length > 0}
+				<span class="text-blue-400 text-lg animate-pulse">
+					Running: {$runningTestNames.slice(0, 3).join(', ')}{$runningTestNames.length > 3 ? ` +${$runningTestNames.length - 3} more` : ''}
+				</span>
+			{/if}
+		</div>
 		<div class="flex items-center gap-3">
 			<button
 				on:click={syncTestConfigs}

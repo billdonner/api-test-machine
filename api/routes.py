@@ -488,7 +488,7 @@ async def sync_test_configs(
 
 class RunAllRequest(BaseModel):
     """Request body for run-all endpoint."""
-    repetitions: int = Field(default=1, ge=1, le=100, description="Number of times to run each test")
+    repetitions: int = Field(default=1, ge=0, le=100, description="Number of times to run each test (0 = run once as specified)")
 
 
 @tests_router.post(
@@ -505,6 +505,9 @@ async def run_all_enabled_tests(
     exec = get_executor()
 
     repetitions = request.repetitions if request else 1
+    # Treat 0 as 1 (run once as specified)
+    if repetitions == 0:
+        repetitions = 1
 
     # Get all enabled test configs
     configs = await store.list_test_configs(enabled_only=True)

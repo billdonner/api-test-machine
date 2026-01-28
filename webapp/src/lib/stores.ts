@@ -26,8 +26,8 @@ apiKey.subscribe((key) => {
 	}
 });
 
-// Test repetitions store (number of times to run each test)
-const DEFAULT_REPETITIONS = 1;
+// Test repetitions store (number of times to run each test, 0 = run once as specified)
+const DEFAULT_REPETITIONS = 0;
 export const testRepetitions = writable<number>(
 	isBrowser ? parseInt(window.localStorage.getItem('atm_test_repetitions') || String(DEFAULT_REPETITIONS), 10) : DEFAULT_REPETITIONS
 );
@@ -115,6 +115,9 @@ export function stopRunPolling(): void {
 		runPollInterval = null;
 	}
 }
+
+// Currently running test name (for display)
+export const currentlyRunningTest = writable<string | null>(null);
 
 // Health check
 export const apiHealthy = writable<boolean | null>(null);

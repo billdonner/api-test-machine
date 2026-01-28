@@ -15,7 +15,7 @@
 
 	function saveSettings() {
 		apiKey.set(keyInput || null);
-		testRepetitions.set(Math.max(1, Math.min(100, repsInput)));
+		testRepetitions.set(Math.max(0, Math.min(100, repsInput)));
 		showSettings = false;
 		checkHealth();
 	}
@@ -84,12 +84,12 @@
 						<input
 							id="reps-input"
 							type="number"
-							min="1"
+							min="0"
 							max="100"
 							bind:value={repsInput}
 							class="input w-full"
 						/>
-						<p class="text-xs text-slate-400 mt-1">Tests per batch</p>
+						<p class="text-xs text-slate-400 mt-1">0 = as specified</p>
 					</div>
 					<button on:click={saveSettings} class="btn btn-primary h-10">Save</button>
 				</div>
