@@ -100,6 +100,19 @@ class TestOrchestrator:
             logger.warning(f"Schedule {schedule_id} not found")
             return
 
+        # Check if max_runs limit has been reached
+        if config.max_runs is not None and config.run_count >= config.max_runs:
+            logger.info(f"Schedule {config.name} reached max_runs limit ({config.max_runs})")
+            # Disable the schedule and remove from scheduler
+            config.enabled = False
+            self.scheduler.remove_schedule(schedule_id)
+            self.storage.save(self.state)
+            return
+
+        # Increment run count
+        config.run_count += 1
+        config.updated_at = datetime.utcnow()
+
         # Create run record
         run_record = ScheduledTestRun(
             schedule_id=schedule_id,
@@ -107,7 +120,7 @@ class TestOrchestrator:
         )
         self.state.add_run_record(run_record)
 
-        logger.info(f"Executing scheduled test: {config.name}")
+        logger.info(f"Executing scheduled test: {config.name} (run {config.run_count}/{config.max_runs or '∞'})")
 
         try:
             # Start test via API
@@ -232,11 +245,58 @@ class TestOrchestrator:
             return None
 
         next_run = self.scheduler.get_next_run_time(schedule_id)
+        job = self.scheduler._scheduler.get_job(str(schedule_id))
+        is_paused = job is not None and job.next_run_time is None
 
         return {
             "id": str(schedule_id),
             "name": config.name,
             "enabled": config.enabled,
+            "paused": is_paused,
             "next_run_time": next_run.isoformat() if next_run else None,
             "trigger_type": config.trigger.type.value,
+            "max_runs": config.max_runs,
+            "run_count": config.run_count,
         }
+
+    async def pause_schedule(self, schedule_id: UUID) -> bool:
+        """Pause a schedule.
+
+        Args:
+            schedule_id: Schedule ID to pause
+
+        Returns:
+            True if paused, False if not found
+        """
+        if not self.state:
+            return False
+
+        config = self.state.get_schedule(schedule_id)
+        if not config:
+            return False
+
+        paused = self.scheduler.pause_schedule(schedule_id)
+        if paused:
+            self.storage.save(self.state)
+        return paused
+
+    async def resume_schedule(self, schedule_id: UUID) -> bool:
+        """Resume a paused schedule.
+
+        Args:
+            schedule_id: Schedule ID to resume
+
+        Returns:
+            True if resumed, False if not found
+        """
+        if not self.state:
+            return False
+
+        config = self.state.get_schedule(schedule_id)
+        if not config:
+            return False
+
+        resumed = self.scheduler.resume_schedule(schedule_id)
+        if resumed:
+            self.storage.save(self.state)
+        return resumed

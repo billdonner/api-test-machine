@@ -1,12 +1,22 @@
 """FastAPI application factory."""
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import health_router, init_dependencies, runs_router, storage_router, tests_router
+from agent.orchestrator import TestOrchestrator
+from api.routes import (
+    health_router,
+    init_dependencies,
+    init_orchestrator,
+    runs_router,
+    schedules_router,
+    storage_router,
+    tests_router,
+)
 from api.storage_base import create_storage
 from engine.executor import TestExecutor
 
@@ -26,7 +36,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     init_dependencies(executor, storage)
 
+    # Initialize scheduler/orchestrator
+    api_key = os.environ.get("ATM_API_KEY")
+    orchestrator = TestOrchestrator(
+        api_url="http://localhost:8000",
+        api_key=api_key,
+    )
+    await orchestrator.start()
+    init_orchestrator(orchestrator)
+
     yield
+
+    # Cleanup scheduler
+    await orchestrator.stop()
 
     # Cleanup (cancel any active runs)
     for run in executor.get_active_runs():
@@ -63,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(runs_router, prefix="/api/v1")
     app.include_router(storage_router, prefix="/api/v1")
     app.include_router(tests_router, prefix="/api/v1")
+    app.include_router(schedules_router, prefix="/api/v1")
 
     return app
 

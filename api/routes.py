@@ -42,6 +42,9 @@ runs_router = APIRouter(prefix="/runs", tags=["runs"])
 storage_router = APIRouter(prefix="/storage", tags=["storage"])
 tests_router = APIRouter(prefix="/tests", tags=["tests"])
 
+# Re-export schedules router and initializer
+from api.schedules import schedules_router, init_orchestrator
+
 # Shared state (initialized in app lifespan)
 executor: TestExecutor | None = None
 storage: StorageInterface | None = None

@@ -15,8 +15,12 @@
 		maxConcurrency
 	} from '$lib/stores';
 	import { api } from '$lib/api';
-	import type { RunStatus, RunSummary, TestConfig } from '$lib/types';
+	import type { RunStatus, RunSummary, TestConfig, Schedule } from '$lib/types';
 	import RunsPerDayChart from '$lib/components/charts/RunsPerDayChart.svelte';
+
+	// Schedules state
+	let activeSchedules: Schedule[] = [];
+	let schedulesLoading = false;
 
 	const statuses: (RunStatus | null)[] = [null, 'pending', 'running', 'completed', 'cancelled', 'failed'];
 
@@ -239,19 +243,55 @@
 		}
 	}
 
+	async function loadActiveSchedules() {
+		try {
+			schedulesLoading = true;
+			const response = await api.listSchedules();
+			// Filter to only active schedules (enabled, not paused, not completed)
+			activeSchedules = response.schedules.filter(s =>
+				s.enabled && !s.paused && (s.max_runs === null || s.run_count < s.max_runs)
+			);
+		} catch (e) {
+			console.error('Failed to load schedules:', e);
+		} finally {
+			schedulesLoading = false;
+		}
+	}
+
+	async function stopAllSchedules() {
+		if (!confirm(`Stop all ${activeSchedules.length} active schedule(s)?`)) return;
+
+		try {
+			for (const schedule of activeSchedules) {
+				await api.pauseSchedule(schedule.id);
+			}
+			await loadActiveSchedules();
+		} catch (e) {
+			alert('Failed to stop schedules: ' + (e instanceof Error ? e.message : 'Unknown error'));
+		}
+	}
+
 	let configPollInterval: ReturnType<typeof setInterval> | null = null;
+
+	let schedulePollInterval: ReturnType<typeof setInterval> | null = null;
 
 	onMount(() => {
 		startPolling(3000);
 		loadTestConfigs();
+		loadActiveSchedules();
 		// Poll test configs less frequently to get updated run counts
 		configPollInterval = setInterval(loadTestConfigs, 5000);
+		// Poll schedules
+		schedulePollInterval = setInterval(loadActiveSchedules, 10000);
 	});
 
 	onDestroy(() => {
 		stopPolling();
 		if (configPollInterval) {
 			clearInterval(configPollInterval);
+		}
+		if (schedulePollInterval) {
+			clearInterval(schedulePollInterval);
 		}
 	});
 </script>
@@ -261,6 +301,29 @@
 </svelte:head>
 
 <div class="space-y-6">
+	<!-- Active Schedules Banner -->
+	{#if activeSchedules.length > 0}
+		<div class="bg-blue-900/50 border border-blue-700 rounded-lg p-4 flex items-center justify-between">
+			<div class="flex items-center gap-3">
+				<span class="text-2xl">&#128337;</span>
+				<span class="text-blue-200">
+					<strong>{activeSchedules.length}</strong> scheduled test{activeSchedules.length !== 1 ? 's' : ''} active
+				</span>
+			</div>
+			<div class="flex items-center gap-3">
+				<a href="/schedules" class="btn bg-blue-700 hover:bg-blue-600 text-white">
+					View Schedules
+				</a>
+				<button
+					on:click={stopAllSchedules}
+					class="btn bg-red-700 hover:bg-red-600 text-white"
+				>
+					Stop All
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-3">
 			<h1 class="text-2xl font-bold">Dashboard</h1>

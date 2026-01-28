@@ -2,11 +2,11 @@
 
 from agent.scheduler import TestScheduler
 from agent.orchestrator import TestOrchestrator
-from agent.models import ScheduleConfig, ScheduledTest
+from agent.models import ScheduleConfig, ScheduledTestRun
 
 __all__ = [
     "TestScheduler",
     "TestOrchestrator",
     "ScheduleConfig",
-    "ScheduledTest",
+    "ScheduledTestRun",
 ]

@@ -198,3 +198,71 @@ export interface StorageStatus {
 	avg_run_duration_seconds: number | null;
 	total_data_transferred_bytes: number;
 }
+
+// Schedule types
+export type TriggerType = 'interval' | 'cron' | 'date';
+
+export interface IntervalTrigger {
+	type: 'interval';
+	seconds?: number;
+	minutes?: number;
+	hours?: number;
+	days?: number;
+}
+
+export interface CronTrigger {
+	type: 'cron';
+	minute: string;
+	hour: string;
+	day: string;
+	month: string;
+	day_of_week: string;
+	timezone: string;
+}
+
+export interface DateTrigger {
+	type: 'date';
+	run_date: string;
+}
+
+export type ScheduleTrigger = IntervalTrigger | CronTrigger | DateTrigger;
+
+export interface Schedule {
+	id: string;
+	name: string;
+	description: string | null;
+	test_name: string;
+	trigger_type: TriggerType;
+	trigger: ScheduleTrigger;
+	max_runs: number | null;
+	run_count: number;
+	enabled: boolean;
+	paused: boolean;
+	next_run_time: string | null;
+	created_at: string;
+	updated_at: string;
+	tags: string[];
+}
+
+export interface ScheduleListResponse {
+	schedules: Schedule[];
+	total: number;
+}
+
+export interface CreateScheduleRequest {
+	name: string;
+	description?: string;
+	test_name: string;
+	spec?: Partial<TestSpec> & { name: string; url: string };
+	trigger: ScheduleTrigger;
+	max_runs?: number | null;
+	enabled?: boolean;
+	tags?: string[];
+}
+
+export interface ScheduleActionResponse {
+	id: string;
+	action: string;
+	success: boolean;
+	message: string;
+}

@@ -56,6 +56,10 @@ class ScheduleConfig(BaseModel):
     # Schedule trigger (one of the trigger types)
     trigger: CronTrigger | IntervalTrigger | DateTrigger
 
+    # Run limits
+    max_runs: int | None = None  # None = indefinite, 1+ = stop after N runs
+    run_count: int = 0  # Track how many times it has run
+
     # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -6,10 +6,14 @@ import type {
 	BatchStartResponse,
 	CreateRunRequest,
 	CreateRunResponse,
+	CreateScheduleRequest,
 	HealthResponse,
 	RequestDetail,
 	RunDetail,
 	RunListResponse,
+	Schedule,
+	ScheduleActionResponse,
+	ScheduleListResponse,
 	StorageStatus,
 	TestConfigList
 } from './types';
@@ -106,6 +110,31 @@ class ApiClient {
 			repetitions,
 			max_concurrency: maxConcurrency
 		});
+	}
+
+	// Schedule endpoints
+	async listSchedules(): Promise<ScheduleListResponse> {
+		return this.request<ScheduleListResponse>('GET', '/api/v1/schedules');
+	}
+
+	async getSchedule(id: string): Promise<Schedule> {
+		return this.request<Schedule>('GET', `/api/v1/schedules/${id}`);
+	}
+
+	async createSchedule(request: CreateScheduleRequest): Promise<Schedule> {
+		return this.request<Schedule>('POST', '/api/v1/schedules', request);
+	}
+
+	async deleteSchedule(id: string): Promise<ScheduleActionResponse> {
+		return this.request<ScheduleActionResponse>('DELETE', `/api/v1/schedules/${id}`);
+	}
+
+	async pauseSchedule(id: string): Promise<ScheduleActionResponse> {
+		return this.request<ScheduleActionResponse>('POST', `/api/v1/schedules/${id}/pause`);
+	}
+
+	async resumeSchedule(id: string): Promise<ScheduleActionResponse> {
+		return this.request<ScheduleActionResponse>('POST', `/api/v1/schedules/${id}/resume`);
 	}
 }
 
