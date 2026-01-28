@@ -5,7 +5,7 @@ import itertools
 import json
 import random
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Callable
 from uuid import UUID
 
@@ -160,7 +160,7 @@ class TestExecutor:
 
         try:
             result.status = RunStatus.RUNNING
-            result.started_at = datetime.utcnow()
+            result.started_at = datetime.now(UTC)
 
             # Set up rate limiter
             if spec.requests_per_second:
@@ -433,7 +433,7 @@ class TestExecutor:
             result.error_message = str(e)
             result.passed = False
         finally:
-            result.completed_at = datetime.utcnow()
+            result.completed_at = datetime.now(UTC)
             # Clean up
             self._cancel_events.pop(result.id, None)
             self._active_runs.pop(result.id, None)

@@ -1,7 +1,7 @@
 """Metrics collection and aggregation for test runs."""
 
 import statistics
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Sequence
 
 from engine.models import EndpointMetrics, Metrics, RequestResult, Thresholds
@@ -23,11 +23,11 @@ class MetricsCollector:
 
     def start(self) -> None:
         """Mark the start of metrics collection."""
-        self._start_time = datetime.utcnow()
+        self._start_time = datetime.now(UTC)
 
     def stop(self) -> None:
         """Mark the end of metrics collection."""
-        self._end_time = datetime.utcnow()
+        self._end_time = datetime.now(UTC)
 
     def add_result(self, result: RequestResult) -> None:
         """Add a request result to the collection.

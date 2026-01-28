@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -111,7 +111,7 @@ class TestOrchestrator:
 
         # Increment run count
         config.run_count += 1
-        config.updated_at = datetime.utcnow()
+        config.updated_at = datetime.now(UTC)
 
         # Create run record
         run_record = ScheduledTestRun(

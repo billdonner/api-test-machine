@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -137,7 +137,7 @@ class RequestResult(BaseModel):
     status_code: int | None = None
     latency_ms: float
     error: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     response_size_bytes: int | None = None
 
     # Multi-endpoint tracking

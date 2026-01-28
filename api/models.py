@@ -1,6 +1,6 @@
 """Request/response Pydantic schemas for the API."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -34,7 +34,7 @@ class HealthResponse(BaseModel):
     """Health check response."""
     status: str = "ok"
     version: str = "0.1.0"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RunSummary(BaseModel):

@@ -1,7 +1,7 @@
 """Base storage interface and factory."""
 
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
@@ -183,7 +183,7 @@ class AsyncJSONStorage:
         status_list = [{"status": k, "count": v} for k, v in runs_by_status.items()]
 
         # Format runs by day (last 30 days only)
-        thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        thirty_days_ago = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
         day_list = [
             {"date": k, "count": v["count"], "passed": v["passed"], "failed": v["failed"]}
             for k, v in sorted(runs_by_day.items())
@@ -253,7 +253,7 @@ class AsyncJSONStorage:
     async def save_test_config(self, name: str, spec: dict, enabled: bool = True) -> None:
         """Save or update a test configuration."""
         configs = self._load_configs()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         if name in configs:
             configs[name]["spec"] = spec
             configs[name]["enabled"] = enabled
@@ -278,7 +278,7 @@ class AsyncJSONStorage:
         configs = self._load_configs()
         if name in configs:
             configs[name]["enabled"] = enabled
-            configs[name]["updated_at"] = datetime.utcnow().isoformat()
+            configs[name]["updated_at"] = datetime.now(UTC).isoformat()
             self._save_configs(configs)
             return True
         return False
@@ -315,7 +315,7 @@ class AsyncJSONStorage:
                 by_name[name] = run
 
         count = 0
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         for name, run in by_name.items():
             if name not in configs:
                 configs[name] = {

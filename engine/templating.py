@@ -3,7 +3,7 @@
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -46,9 +46,9 @@ class TemplateEngine:
         if name == "uuid":
             return str(uuid.uuid4())
         elif name == "timestamp":
-            return datetime.utcnow().isoformat()
+            return datetime.now(UTC).isoformat()
         elif name == "timestamp_unix":
-            return str(int(datetime.utcnow().timestamp()))
+            return str(int(datetime.now(UTC).timestamp()))
         elif name == "request_number":
             return str(request_number)
         elif name == "random_int":

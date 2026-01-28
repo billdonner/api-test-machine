@@ -2,7 +2,7 @@
 
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Sequence
 from uuid import UUID
@@ -290,7 +290,7 @@ class SQLiteStorage:
 
             # Runs by day (last 30 days)
             runs_by_day = []
-            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
 
             # Get all runs from last 30 days grouped by date
             result = await session.execute(
@@ -442,14 +442,14 @@ class SQLiteStorage:
             if existing:
                 existing.spec_json = spec
                 existing.enabled = enabled
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now(UTC)
             else:
                 config = TestConfig(
                     name=name,
                     enabled=enabled,
                     spec_json=spec,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
                 session.add(config)
 
@@ -494,7 +494,7 @@ class SQLiteStorage:
             config = await session.get(TestConfig, name)
             if config:
                 config.enabled = enabled
-                config.updated_at = datetime.utcnow()
+                config.updated_at = datetime.now(UTC)
                 await session.commit()
                 return True
             return False
@@ -595,8 +595,8 @@ class SQLiteStorage:
                         name=name,
                         enabled=True,
                         spec_json=spec_json,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=datetime.now(UTC),
+                        updated_at=datetime.now(UTC),
                     )
                     session.add(config)
                     count += 1

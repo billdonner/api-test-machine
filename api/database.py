@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -52,8 +52,8 @@ class TestConfig(Base):
     spec_json = Column(JSON, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
 class RunRecord(Base):
@@ -75,7 +75,7 @@ class RunRecord(Base):
     status = Column(String(20), nullable=False, index=True)
     started_at = Column(DateTime, index=True)
     completed_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
     # Results
     passed = Column(Boolean)
