@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -16,6 +16,11 @@
 	import RequestDetailViewer from '$lib/components/RequestDetailViewer.svelte';
 
 	$: runId = $page.params.id;
+
+	// Restart polling when runId changes (e.g., after rerun navigates to new run)
+	$: if (runId) {
+		startRunPolling(runId);
+	}
 
 	let cancelling = false;
 	let rerunning = false;
@@ -53,11 +58,7 @@
 		return `status-${status}`;
 	}
 
-	onMount(() => {
-		if (runId) {
-			startRunPolling(runId);
-		}
-	});
+	// Polling is started by the reactive statement above when runId changes
 
 	onDestroy(() => {
 		stopRunPolling();
@@ -97,7 +98,13 @@
 					<p class="text-sm text-slate-400 font-mono mt-1">{run.id}</p>
 				</div>
 				<div class="flex items-center gap-4">
-					<span class="{getStatusClass(run.status)} text-lg font-bold capitalize">
+					<span class="{getStatusClass(run.status)} text-lg font-bold capitalize flex items-center gap-2">
+						{#if run.status === 'running' || run.status === 'pending'}
+							<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							</svg>
+						{/if}
 						{run.status}
 					</span>
 					{#if run.status === 'running'}
@@ -112,9 +119,17 @@
 						<button
 							on:click={rerunTest}
 							disabled={rerunning}
-							class="btn btn-primary"
+							class="btn btn-primary flex items-center gap-2"
 						>
-							{rerunning ? 'Starting...' : '↻ Rerun'}
+							{#if rerunning}
+								<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+								</svg>
+								Starting...
+							{:else}
+								↻ Rerun
+							{/if}
 						</button>
 					{/if}
 				</div>

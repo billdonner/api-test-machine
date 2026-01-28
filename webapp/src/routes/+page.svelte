@@ -28,6 +28,9 @@
 	let configsLoading = false;
 	let enabledCount = 0;
 
+	// Track which tests are currently being rerun
+	let rerunningTests: Set<string> = new Set();
+
 	// Group runs by name
 	interface RunGroup {
 		name: string;
@@ -121,16 +124,26 @@
 	}
 
 	async function rerunTest(run: RunSummary) {
+		if (rerunningTests.has(run.id)) return;
+
+		rerunningTests.add(run.id);
+		rerunningTests = rerunningTests; // Trigger reactivity
+
 		try {
 			// Fetch full run details to get the spec
 			const detail = await api.getRun(run.id);
 			// Create new run with same spec
 			const response = await api.createRun({ spec: detail.spec });
+			// Reload runs to show the new running test
+			await loadRuns();
 			// Navigate to the new run
 			goto(`/runs/${response.id}`);
 		} catch (e) {
 			console.error('Failed to rerun:', e);
 			alert('Failed to rerun test');
+		} finally {
+			rerunningTests.delete(run.id);
+			rerunningTests = rerunningTests; // Trigger reactivity
 		}
 	}
 
@@ -425,10 +438,15 @@
 									{#if group.latestRun.status !== 'running' && group.latestRun.status !== 'pending'}
 										<button
 											on:click={() => rerunTest(group.latestRun)}
-											class="text-blue-400 hover:text-blue-300 text-sm"
+											disabled={rerunningTests.has(group.latestRun.id)}
+											class="text-blue-400 hover:text-blue-300 text-sm disabled:opacity-50 disabled:cursor-wait"
 											title="Rerun this test"
 										>
-											↻
+											{#if rerunningTests.has(group.latestRun.id)}
+												<span class="inline-block animate-spin">↻</span>
+											{:else}
+												↻
+											{/if}
 										</button>
 										<a
 											href="/edit/{group.latestRun.id}"
@@ -483,10 +501,15 @@
 											{#if run.status !== 'running' && run.status !== 'pending'}
 												<button
 													on:click={() => rerunTest(run)}
-													class="text-blue-400/80 hover:text-blue-300 text-xs"
+													disabled={rerunningTests.has(run.id)}
+													class="text-blue-400/80 hover:text-blue-300 text-xs disabled:opacity-50 disabled:cursor-wait"
 													title="Rerun"
 												>
-													↻
+													{#if rerunningTests.has(run.id)}
+														<span class="inline-block animate-spin">↻</span>
+													{:else}
+														↻
+													{/if}
 												</button>
 											{/if}
 											{#if run.status !== 'running'}
