@@ -101,8 +101,8 @@ class ApiClient {
 		return this.request('POST', '/api/v1/tests/sync');
 	}
 
-	async runAllEnabledTests(): Promise<BatchRunResponse> {
-		return this.request<BatchRunResponse>('POST', '/api/v1/tests/run-all');
+	async runAllEnabledTests(repetitions: number = 1): Promise<BatchRunResponse> {
+		return this.request<BatchRunResponse>('POST', '/api/v1/tests/run-all', { repetitions });
 	}
 }
 

@@ -4,6 +4,7 @@ import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
 from api.auth import ApiKeyDep
 from api.models import (
@@ -485,6 +486,11 @@ async def sync_test_configs(
     return {"message": f"Synced {count} test configs", "synced": count}
 
 
+class RunAllRequest(BaseModel):
+    """Request body for run-all endpoint."""
+    repetitions: int = Field(default=1, ge=1, le=100, description="Number of times to run each test")
+
+
 @tests_router.post(
     "/run-all",
     response_model=BatchRunResponse,
@@ -492,10 +498,13 @@ async def sync_test_configs(
 )
 async def run_all_enabled_tests(
     api_key: ApiKeyDep,
+    request: RunAllRequest | None = None,
 ) -> BatchRunResponse:
     """Run all enabled tests and return results."""
     store = get_storage()
     exec = get_executor()
+
+    repetitions = request.repetitions if request else 1
 
     # Get all enabled test configs
     configs = await store.list_test_configs(enabled_only=True)
@@ -516,52 +525,54 @@ async def run_all_enabled_tests(
 
     from engine.models import TestSpec
 
-    for config in configs:
-        try:
-            spec = TestSpec.model_validate(config["spec"])
-
-            # Create initial result
-            result = RunResult(spec=spec, status=RunStatus.PENDING)
-            await store.save(result)
-
-            # Run the test synchronously (for batch reporting)
+    # Run each config 'repetitions' times
+    for rep in range(repetitions):
+        for config in configs:
             try:
-                final_result = await exec.run(spec, run_id=result.id)
-                await store.save(final_result)
+                spec = TestSpec.model_validate(config["spec"])
 
-                results.append(BatchRunResult(
-                    name=config["name"],
-                    run_id=final_result.id,
-                    status=final_result.status,
-                    passed=final_result.passed,
-                    error_message=final_result.error_message,
-                    latency_p95_ms=final_result.metrics.latency_p95_ms,
-                    requests_completed=final_result.requests_completed,
-                    total_requests=spec.total_requests,
-                ))
-            except Exception as e:
-                result.status = RunStatus.FAILED
-                result.error_message = str(e)
+                # Create initial result
+                result = RunResult(spec=spec, status=RunStatus.PENDING)
                 await store.save(result)
 
+                # Run the test synchronously (for batch reporting)
+                try:
+                    final_result = await exec.run(spec, run_id=result.id)
+                    await store.save(final_result)
+
+                    results.append(BatchRunResult(
+                        name=config["name"],
+                        run_id=final_result.id,
+                        status=final_result.status,
+                        passed=final_result.passed,
+                        error_message=final_result.error_message,
+                        latency_p95_ms=final_result.metrics.latency_p95_ms,
+                        requests_completed=final_result.requests_completed,
+                        total_requests=spec.total_requests,
+                    ))
+                except Exception as e:
+                    result.status = RunStatus.FAILED
+                    result.error_message = str(e)
+                    await store.save(result)
+
+                    results.append(BatchRunResult(
+                        name=config["name"],
+                        run_id=result.id,
+                        status=RunStatus.FAILED,
+                        passed=False,
+                        error_message=str(e),
+                        total_requests=spec.total_requests,
+                    ))
+
+            except Exception as e:
+                # Invalid spec - skip but report
                 results.append(BatchRunResult(
                     name=config["name"],
-                    run_id=result.id,
+                    run_id=uuid4(),
                     status=RunStatus.FAILED,
                     passed=False,
-                    error_message=str(e),
-                    total_requests=spec.total_requests,
+                    error_message=f"Invalid spec: {e}",
                 ))
-
-        except Exception as e:
-            # Invalid spec - skip but report
-            results.append(BatchRunResult(
-                name=config["name"],
-                run_id=uuid4(),
-                status=RunStatus.FAILED,
-                passed=False,
-                error_message=f"Invalid spec: {e}",
-            ))
 
     completed_at = datetime.utcnow()
 

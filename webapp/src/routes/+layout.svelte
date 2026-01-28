@@ -1,18 +1,21 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { apiKey, apiHealthy, checkHealth } from '$lib/stores';
+	import { apiKey, apiHealthy, checkHealth, testRepetitions } from '$lib/stores';
 
 	let showSettings = false;
 	let keyInput = '';
+	let repsInput = 1;
 
 	onMount(() => {
 		checkHealth();
 		keyInput = $apiKey || '';
+		repsInput = $testRepetitions;
 	});
 
-	function saveApiKey() {
+	function saveSettings() {
 		apiKey.set(keyInput || null);
+		testRepetitions.set(Math.max(1, Math.min(100, repsInput)));
 		showSettings = false;
 		checkHealth();
 	}
@@ -64,19 +67,31 @@
 
 		{#if showSettings}
 			<div class="container mx-auto px-4 py-4 border-t border-slate-700">
-				<div class="max-w-md">
-					<label for="api-key-input" class="label">API Key</label>
-					<div class="flex gap-2">
+				<div class="flex flex-wrap gap-6 items-end">
+					<div class="flex-1 min-w-[200px]">
+						<label for="api-key-input" class="label">API Key</label>
 						<input
 							id="api-key-input"
 							type="password"
 							bind:value={keyInput}
 							placeholder="Enter API key..."
-							class="input flex-1"
+							class="input w-full"
 						/>
-						<button on:click={saveApiKey} class="btn btn-primary">Save</button>
+						<p class="text-xs text-slate-400 mt-1">Leave empty for dev mode</p>
 					</div>
-					<p class="text-xs text-slate-400 mt-1">Leave empty for dev mode (no auth)</p>
+					<div class="w-32">
+						<label for="reps-input" class="label">Repetitions</label>
+						<input
+							id="reps-input"
+							type="number"
+							min="1"
+							max="100"
+							bind:value={repsInput}
+							class="input w-full"
+						/>
+						<p class="text-xs text-slate-400 mt-1">Tests per batch</p>
+					</div>
+					<button on:click={saveSettings} class="btn btn-primary h-10">Save</button>
 				</div>
 			</div>
 		{/if}

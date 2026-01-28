@@ -26,6 +26,19 @@ apiKey.subscribe((key) => {
 	}
 });
 
+// Test repetitions store (number of times to run each test)
+const DEFAULT_REPETITIONS = 1;
+export const testRepetitions = writable<number>(
+	isBrowser ? parseInt(window.localStorage.getItem('atm_test_repetitions') || String(DEFAULT_REPETITIONS), 10) : DEFAULT_REPETITIONS
+);
+
+// Persist repetitions to localStorage
+testRepetitions.subscribe((reps) => {
+	if (isBrowser) {
+		window.localStorage.setItem('atm_test_repetitions', String(reps));
+	}
+});
+
 // Runs list store
 export const runs = writable<RunSummary[]>([]);
 export const runsTotal = writable<number>(0);

@@ -10,7 +10,8 @@
 		statusFilter,
 		startPolling,
 		stopPolling,
-		loadRuns
+		loadRuns,
+		testRepetitions
 	} from '$lib/stores';
 	import { api } from '$lib/api';
 	import type { RunStatus, RunSummary, TestConfig } from '$lib/types';
@@ -197,11 +198,13 @@
 			alert('No tests are enabled. Enable some tests first.');
 			return;
 		}
-		if (!confirm(`Run all ${enabledCount} enabled test(s)?`)) return;
+		const reps = $testRepetitions;
+		const totalRuns = enabledCount * reps;
+		if (!confirm(`Run all ${enabledCount} enabled test(s)${reps > 1 ? ` x ${reps} repetitions = ${totalRuns} runs` : ''}?`)) return;
 
 		try {
 			runningAll = true;
-			const response = await api.runAllEnabledTests();
+			const response = await api.runAllEnabledTests(reps);
 			// Store results in session storage for the batch page (can be viewed later)
 			sessionStorage.setItem('batchResults', JSON.stringify(response));
 			// Reload runs to show progress - dashboard will update via polling
