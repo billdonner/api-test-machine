@@ -107,6 +107,12 @@ async def create_run(
         try:
             final_result = await exec.run(request.spec, run_id=result.id)
             await store.save(final_result)
+            # Update test config with latest spec
+            await store.save_test_config(
+                request.spec.name,
+                request.spec.model_dump(mode="json"),
+                enabled=True,
+            )
         except Exception as e:
             # Update with failure
             result.status = RunStatus.FAILED
