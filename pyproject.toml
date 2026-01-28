@@ -24,6 +24,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "aiosqlite>=0.19",
     "greenlet>=3.0",
+    "fpdf2>=2.7",
 ]
 
 [project.optional-dependencies]

@@ -367,5 +367,37 @@ def list_runs(
     console.print(table)
 
 
+@app.command()
+def report(
+    output: Annotated[
+        Path,
+        typer.Argument(help="Output PDF file path"),
+    ],
+    enabled_only: Annotated[
+        bool,
+        typer.Option("--enabled-only", "-e", help="Only include enabled tests"),
+    ] = False,
+) -> None:
+    """Generate a PDF report of all test configurations."""
+    params = f"?enabled_only={'true' if enabled_only else 'false'}"
+
+    with console.status("Generating report..."):
+        response = api_request("GET", f"/api/v1/tests/report{params}")
+
+    if response.status_code == 401:
+        error_console.print("[red]Error:[/red] Authentication failed. Check ATM_API_KEY.")
+        raise typer.Exit(1)
+
+    if response.status_code != 200:
+        error_console.print(f"[red]Error:[/red] Failed to generate report: {response.text}")
+        raise typer.Exit(1)
+
+    # Write PDF to file
+    with open(output, "wb") as f:
+        f.write(response.content)
+
+    console.print(f"[green]Report saved to:[/green] {output}")
+
+
 if __name__ == "__main__":
     app()

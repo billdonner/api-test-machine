@@ -4,6 +4,7 @@ import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from api.auth import ApiKeyDep
@@ -598,4 +599,46 @@ async def run_all_enabled_tests(
         total_tests=len(run_ids),
         run_ids=run_ids,
         message=f"Started {len(run_ids)} test(s) in background",
+    )
+
+
+@tests_router.get(
+    "/report",
+    responses={401: {"model": ErrorResponse}},
+)
+async def get_test_report(
+    api_key: ApiKeyDep,
+    enabled_only: bool = Query(default=False),
+) -> Response:
+    """Generate a PDF report of all test configurations.
+
+    Returns a PDF document with:
+    - Summary page with test counts
+    - Detailed section for each test with configuration and thresholds
+    """
+    from api.reports import generate_test_report_pdf
+
+    store = get_storage()
+    configs = await store.list_test_configs(enabled_only=enabled_only)
+
+    # Convert to list of dicts for the PDF generator
+    config_dicts = []
+    for c in configs:
+        config_dicts.append({
+            "name": c["name"],
+            "enabled": c["enabled"],
+            "spec": c["spec"],
+            "created_at": c.get("created_at"),
+            "updated_at": c.get("updated_at"),
+            "run_count": c.get("run_count", 0),
+        })
+
+    pdf_bytes = generate_test_report_pdf(config_dicts)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "attachment; filename=test-report.pdf"
+        }
     )
