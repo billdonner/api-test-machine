@@ -3,7 +3,7 @@
  */
 
 import type {
-	BatchRunResponse,
+	BatchStartResponse,
 	CreateRunRequest,
 	CreateRunResponse,
 	HealthResponse,
@@ -101,8 +101,11 @@ class ApiClient {
 		return this.request('POST', '/api/v1/tests/sync');
 	}
 
-	async runAllEnabledTests(repetitions: number = 1): Promise<BatchRunResponse> {
-		return this.request<BatchRunResponse>('POST', '/api/v1/tests/run-all', { repetitions });
+	async runAllEnabledTests(repetitions: number = 1, maxConcurrency: number = 0): Promise<BatchStartResponse> {
+		return this.request<BatchStartResponse>('POST', '/api/v1/tests/run-all', {
+			repetitions,
+			max_concurrency: maxConcurrency
+		});
 	}
 }
 

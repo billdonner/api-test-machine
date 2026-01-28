@@ -165,6 +165,7 @@ export interface TestConfig {
 	spec: TestSpec;
 	created_at: string | null;
 	updated_at: string | null;
+	run_count: number;
 }
 
 export interface TestConfigList {
@@ -173,30 +174,11 @@ export interface TestConfigList {
 }
 
 // Batch run types
-export interface BatchRunResult {
-	name: string;
-	run_id: string;
-	status: RunStatus;
-	passed: boolean | null;
-	error_message: string | null;
-	latency_p95_ms: number | null;
-	requests_completed: number;
-	total_requests: number;
-}
-
-export interface BatchRunResponse {
+export interface BatchStartResponse {
 	batch_id: string;
 	total_tests: number;
-	started_at: string;
-	completed_at: string | null;
-	results: BatchRunResult[];
-	summary: {
-		passed?: number;
-		failed?: number;
-		pass_rate?: string;
-		duration_seconds?: number;
-		message?: string;
-	};
+	run_ids: string[];
+	message: string;
 }
 
 export interface StorageStatus {

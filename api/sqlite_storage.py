@@ -506,18 +506,29 @@ class SQLiteStorage:
             enabled_only: If True, only return enabled tests
 
         Returns:
-            List of test config dicts
+            List of test config dicts with run counts
         """
         await self.init()
 
         async with self.db.get_session() as session:
-            query = select(TestConfig)
+            # Subquery to count runs per test name
+            run_counts = (
+                select(RunRecord.name, func.count(RunRecord.id).label("run_count"))
+                .group_by(RunRecord.name)
+                .subquery()
+            )
+
+            # Main query with left join to get run counts
+            query = (
+                select(TestConfig, run_counts.c.run_count)
+                .outerjoin(run_counts, TestConfig.name == run_counts.c.name)
+            )
             if enabled_only:
                 query = query.where(TestConfig.enabled == True)
             query = query.order_by(TestConfig.name)
 
             result = await session.execute(query)
-            configs = result.scalars().all()
+            rows = result.all()
 
             return [
                 {
@@ -526,8 +537,9 @@ class SQLiteStorage:
                     "spec": c.spec_json,
                     "created_at": c.created_at,
                     "updated_at": c.updated_at,
+                    "run_count": run_count or 0,
                 }
-                for c in configs
+                for c, run_count in rows
             ]
 
     async def delete_test_config(self, name: str) -> bool:

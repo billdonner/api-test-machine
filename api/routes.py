@@ -143,21 +143,36 @@ async def list_runs(
 ) -> RunListResponse:
     """List recent test runs."""
     store = get_storage()
+    exec = get_executor()
     runs, total = await store.list_runs(limit=limit, offset=offset, status_filter=status_filter)
 
-    summaries = [
-        RunSummary(
-            id=r.id,
-            name=r.spec.name,
-            status=r.status,
-            started_at=r.started_at,
-            completed_at=r.completed_at,
-            total_requests=r.spec.total_requests,
-            requests_completed=r.requests_completed,
-            passed=r.passed,
-        )
-        for r in runs
-    ]
+    # Build summaries, checking active runs for live status
+    summaries = []
+    for r in runs:
+        # Check if this run is currently active (for live progress)
+        active = exec.get_active_run(r.id)
+        if active:
+            summaries.append(RunSummary(
+                id=active.id,
+                name=active.spec.name,
+                status=active.status,
+                started_at=active.started_at,
+                completed_at=active.completed_at,
+                total_requests=active.spec.total_requests,
+                requests_completed=active.requests_completed,
+                passed=active.passed,
+            ))
+        else:
+            summaries.append(RunSummary(
+                id=r.id,
+                name=r.spec.name,
+                status=r.status,
+                started_at=r.started_at,
+                completed_at=r.completed_at,
+                total_requests=r.spec.total_requests,
+                requests_completed=r.requests_completed,
+                passed=r.passed,
+            ))
 
     return RunListResponse(runs=summaries, total=total)
 
@@ -422,6 +437,7 @@ async def list_test_configs(
                 spec=spec,
                 created_at=c.get("created_at"),
                 updated_at=c.get("updated_at"),
+                run_count=c.get("run_count", 0),
             ))
         except Exception:
             # Skip invalid configs
@@ -489,22 +505,36 @@ async def sync_test_configs(
 class RunAllRequest(BaseModel):
     """Request body for run-all endpoint."""
     repetitions: int = Field(default=1, ge=0, le=100, description="Number of times to run each test (0 = run once as specified)")
+    max_concurrency: int = Field(default=0, ge=0, le=100, description="Max concurrency for all tests (0 = use test's specified concurrency)")
+
+
+class BatchStartResponse(BaseModel):
+    """Response for starting a batch run (async)."""
+    batch_id: str
+    total_tests: int
+    run_ids: list[UUID]
+    message: str
 
 
 @tests_router.post(
     "/run-all",
-    response_model=BatchRunResponse,
+    response_model=BatchStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     responses={401: {"model": ErrorResponse}},
 )
 async def run_all_enabled_tests(
     api_key: ApiKeyDep,
     request: RunAllRequest | None = None,
-) -> BatchRunResponse:
-    """Run all enabled tests and return results."""
+) -> BatchStartResponse:
+    """Run all enabled tests asynchronously.
+
+    Tests are launched in the background. Use GET /runs to monitor progress.
+    """
     store = get_storage()
     exec = get_executor()
 
     repetitions = request.repetitions if request else 1
+    max_concurrency = request.max_concurrency if request else 0
     # Treat 0 as 1 (run once as specified)
     if repetitions == 0:
         repetitions = 1
@@ -513,86 +543,59 @@ async def run_all_enabled_tests(
     configs = await store.list_test_configs(enabled_only=True)
 
     if not configs:
-        return BatchRunResponse(
+        return BatchStartResponse(
             batch_id=str(uuid4()),
             total_tests=0,
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
-            results=[],
-            summary={"message": "No enabled tests to run"},
+            run_ids=[],
+            message="No enabled tests to run",
         )
 
     batch_id = str(uuid4())
-    started_at = datetime.utcnow()
-    results: list[BatchRunResult] = []
+    run_ids: list[UUID] = []
 
     from engine.models import TestSpec
 
-    # Run each config 'repetitions' times
+    # Create all runs and launch them asynchronously
     for rep in range(repetitions):
         for config in configs:
             try:
                 spec = TestSpec.model_validate(config["spec"])
 
+                # Apply max concurrency override if specified
+                if max_concurrency > 0 and spec.concurrency > max_concurrency:
+                    spec.concurrency = max_concurrency
+
                 # Create initial result
                 result = RunResult(spec=spec, status=RunStatus.PENDING)
                 await store.save(result)
+                run_ids.append(result.id)
 
-                # Run the test synchronously (for batch reporting)
-                try:
-                    final_result = await exec.run(spec, run_id=result.id)
-                    await store.save(final_result)
+                # Define background task for this test
+                async def run_test(run_result: RunResult, test_spec: TestSpec, config_name: str):
+                    try:
+                        final_result = await exec.run(test_spec, run_id=run_result.id)
+                        await store.save(final_result)
+                    except Exception as e:
+                        run_result.status = RunStatus.FAILED
+                        run_result.error_message = str(e)
+                        await store.save(run_result)
 
-                    results.append(BatchRunResult(
-                        name=config["name"],
-                        run_id=final_result.id,
-                        status=final_result.status,
-                        passed=final_result.passed,
-                        error_message=final_result.error_message,
-                        latency_p95_ms=final_result.metrics.latency_p95_ms,
-                        requests_completed=final_result.requests_completed,
-                        total_requests=spec.total_requests,
-                    ))
-                except Exception as e:
-                    result.status = RunStatus.FAILED
-                    result.error_message = str(e)
-                    await store.save(result)
-
-                    results.append(BatchRunResult(
-                        name=config["name"],
-                        run_id=result.id,
-                        status=RunStatus.FAILED,
-                        passed=False,
-                        error_message=str(e),
-                        total_requests=spec.total_requests,
-                    ))
+                # Schedule background execution (fire and forget)
+                asyncio.create_task(run_test(result, spec, config["name"]))
 
             except Exception as e:
-                # Invalid spec - skip but report
-                results.append(BatchRunResult(
-                    name=config["name"],
-                    run_id=uuid4(),
+                # Invalid spec - create a failed result
+                failed_result = RunResult(
+                    spec=TestSpec(name=config["name"], url="invalid"),
                     status=RunStatus.FAILED,
-                    passed=False,
-                    error_message=f"Invalid spec: {e}",
-                ))
+                )
+                failed_result.error_message = f"Invalid spec: {e}"
+                await store.save(failed_result)
+                run_ids.append(failed_result.id)
 
-    completed_at = datetime.utcnow()
-
-    # Calculate summary
-    passed_count = sum(1 for r in results if r.passed is True)
-    failed_count = sum(1 for r in results if r.passed is False)
-
-    return BatchRunResponse(
+    return BatchStartResponse(
         batch_id=batch_id,
-        total_tests=len(results),
-        started_at=started_at,
-        completed_at=completed_at,
-        results=results,
-        summary={
-            "passed": passed_count,
-            "failed": failed_count,
-            "pass_rate": f"{(passed_count / len(results) * 100):.1f}%" if results else "N/A",
-            "duration_seconds": (completed_at - started_at).total_seconds(),
-        },
+        total_tests=len(run_ids),
+        run_ids=run_ids,
+        message=f"Started {len(run_ids)} test(s) in background",
     )

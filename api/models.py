@@ -147,6 +147,7 @@ class TestConfigResponse(BaseModel):
     spec: TestSpec
     created_at: datetime | None
     updated_at: datetime | None
+    run_count: int = 0
 
 
 class TestConfigListResponse(BaseModel):

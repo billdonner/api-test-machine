@@ -11,7 +11,8 @@
 		startPolling,
 		stopPolling,
 		loadRuns,
-		testRepetitions
+		testRepetitions,
+		maxConcurrency
 	} from '$lib/stores';
 	import { api } from '$lib/api';
 	import type { RunStatus, RunSummary, TestConfig } from '$lib/types';
@@ -25,7 +26,6 @@
 	// Test configs for enabled/disabled status
 	let testConfigs: Map<string, TestConfig> = new Map();
 	let configsLoading = false;
-	let runningAll = false;
 	let enabledCount = 0;
 
 	// Group runs by name
@@ -36,6 +36,7 @@
 		passCount: number;
 		failCount: number;
 		enabled: boolean;
+		totalRunCount: number;
 	}
 
 	const groupedRuns = derived(runs, ($runs) => {
@@ -61,7 +62,8 @@
 				latestRun: groupRuns[0],
 				passCount: groupRuns.filter(r => r.passed === true).length,
 				failCount: groupRuns.filter(r => r.passed === false).length,
-				enabled: config?.enabled ?? true
+				enabled: config?.enabled ?? true,
+				totalRunCount: config?.run_count ?? groupRuns.length
 			});
 		}
 		// Sort groups by latest run time
@@ -208,31 +210,36 @@
 			return;
 		}
 		const reps = $testRepetitions;
-		const totalRuns = enabledCount * reps;
+		const conc = $maxConcurrency;
+		const totalRuns = enabledCount * (reps === 0 ? 1 : reps);
 		if (!confirm(`Run all ${enabledCount} enabled test(s)${reps > 1 ? ` x ${reps} repetitions = ${totalRuns} runs` : ''}?`)) return;
 
 		try {
-			runningAll = true;
-			const response = await api.runAllEnabledTests(reps);
-			// Store results in session storage for the batch page (can be viewed later)
-			sessionStorage.setItem('batchResults', JSON.stringify(response));
-			// Reload runs to show progress - dashboard will update via polling
+			const response = await api.runAllEnabledTests(reps, conc);
+			// Tests are now running in background - dashboard will poll and show running tests
+			console.log(`Started batch ${response.batch_id}: ${response.total_tests} tests`);
+			// Immediately reload to show pending/running tests
 			await loadRuns();
 		} catch (e) {
 			console.error('Failed to run all tests:', e);
 			alert('Failed to run tests: ' + (e instanceof Error ? e.message : 'Unknown error'));
-		} finally {
-			runningAll = false;
 		}
 	}
+
+	let configPollInterval: ReturnType<typeof setInterval> | null = null;
 
 	onMount(() => {
 		startPolling(3000);
 		loadTestConfigs();
+		// Poll test configs less frequently to get updated run counts
+		configPollInterval = setInterval(loadTestConfigs, 5000);
 	});
 
 	onDestroy(() => {
 		stopPolling();
+		if (configPollInterval) {
+			clearInterval(configPollInterval);
+		}
 	});
 </script>
 
@@ -268,10 +275,10 @@
 			</a>
 			<button
 				on:click={runAllEnabledTests}
-				disabled={runningAll || enabledCount === 0}
+				disabled={$stats.running > 0 || enabledCount === 0}
 				class="btn bg-green-600 hover:bg-green-500 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
 			>
-				{#if runningAll}
+				{#if $stats.running > 0}
 					<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -397,7 +404,7 @@
 								</a>
 							</td>
 							<td class="py-3">
-								<span class="text-slate-300">{group.runs.length}</span>
+								<span class="text-slate-300">{group.totalRunCount}</span>
 							</td>
 							<td class="py-3">
 								<span class="{getStatusClass(group.latestRun.status)} font-medium capitalize">

@@ -1,23 +1,23 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { apiKey, apiHealthy, checkHealth, testRepetitions } from '$lib/stores';
+	import { apiKey, apiHealthy, checkHealth, testRepetitions, maxConcurrency } from '$lib/stores';
 
 	let showSettings = false;
-	let keyInput = '';
-	let repsInput = 1;
 
 	onMount(() => {
 		checkHealth();
-		keyInput = $apiKey || '';
-		repsInput = $testRepetitions;
 	});
 
-	function saveSettings() {
-		apiKey.set(keyInput || null);
-		testRepetitions.set(Math.max(0, Math.min(100, repsInput)));
-		showSettings = false;
-		checkHealth();
+	// Auto-save API key with debounce
+	let keyTimeout: ReturnType<typeof setTimeout>;
+	function onKeyChange(e: Event) {
+		const value = (e.target as HTMLInputElement).value;
+		clearTimeout(keyTimeout);
+		keyTimeout = setTimeout(() => {
+			apiKey.set(value || null);
+			checkHealth();
+		}, 500);
 	}
 </script>
 
@@ -73,25 +73,39 @@
 						<input
 							id="api-key-input"
 							type="password"
-							bind:value={keyInput}
+							value={$apiKey || ''}
+							on:input={onKeyChange}
 							placeholder="Enter API key..."
 							class="input w-full"
 						/>
 						<p class="text-xs text-slate-400 mt-1">Leave empty for dev mode</p>
 					</div>
-					<div class="w-32">
+					<div class="w-28">
 						<label for="reps-input" class="label">Repetitions</label>
 						<input
 							id="reps-input"
 							type="number"
 							min="0"
 							max="100"
-							bind:value={repsInput}
+							value={$testRepetitions}
+							on:input={(e) => testRepetitions.set(Math.max(0, Math.min(100, parseInt(e.currentTarget.value) || 0)))}
 							class="input w-full"
 						/>
 						<p class="text-xs text-slate-400 mt-1">0 = as specified</p>
 					</div>
-					<button on:click={saveSettings} class="btn btn-primary h-10">Save</button>
+					<div class="w-28">
+						<label for="conc-input" class="label">Max Concurrency</label>
+						<input
+							id="conc-input"
+							type="number"
+							min="0"
+							max="100"
+							value={$maxConcurrency}
+							on:input={(e) => maxConcurrency.set(Math.max(0, Math.min(100, parseInt(e.currentTarget.value) || 0)))}
+							class="input w-full"
+						/>
+						<p class="text-xs text-slate-400 mt-1">0 = as specified</p>
+					</div>
 				</div>
 			</div>
 		{/if}

@@ -39,6 +39,19 @@ testRepetitions.subscribe((reps) => {
 	}
 });
 
+// Max concurrency store (0 = use test's specified concurrency)
+const DEFAULT_MAX_CONCURRENCY = 0;
+export const maxConcurrency = writable<number>(
+	isBrowser ? parseInt(window.localStorage.getItem('atm_max_concurrency') || String(DEFAULT_MAX_CONCURRENCY), 10) : DEFAULT_MAX_CONCURRENCY
+);
+
+// Persist max concurrency to localStorage
+maxConcurrency.subscribe((conc) => {
+	if (isBrowser) {
+		window.localStorage.setItem('atm_max_concurrency', String(conc));
+	}
+});
+
 // Runs list store
 export const runs = writable<RunSummary[]>([]);
 export const runsTotal = writable<number>(0);
@@ -51,7 +64,7 @@ export const statusFilter = writable<RunStatus | null>(null);
 // Poll interval store
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-export async function loadRuns(limit = 50, offset = 0): Promise<void> {
+export async function loadRuns(limit = 200, offset = 0): Promise<void> {
 	runsLoading.set(true);
 	runsError.set(null);
 
