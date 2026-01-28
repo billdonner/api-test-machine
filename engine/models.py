@@ -62,6 +62,9 @@ class EndpointSpec(BaseModel):
 
 class TestSpec(BaseModel):
     """Specification for a load test."""
+
+    __test__ = False  # Tell pytest this is not a test class
+
     name: str = Field(..., min_length=1, max_length=256)
     description: str | None = None
 

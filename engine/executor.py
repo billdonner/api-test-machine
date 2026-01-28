@@ -119,6 +119,8 @@ class TestExecutor:
         print(f"Completed: {result.metrics.total_requests} requests")
     """
 
+    __test__ = False  # Tell pytest this is not a test class
+
     def __init__(
         self,
         http_client: httpx.AsyncClient | None = None,
