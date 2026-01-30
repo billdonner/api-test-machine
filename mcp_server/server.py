@@ -242,6 +242,146 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        # Schedule tools
+        Tool(
+            name="create_schedule",
+            description="Create a new schedule to run tests automatically at specified intervals",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name for the schedule",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description",
+                    },
+                    "test_name": {
+                        "type": "string",
+                        "description": "Name of the test configuration to run",
+                    },
+                    "trigger_type": {
+                        "type": "string",
+                        "enum": ["interval", "cron", "date"],
+                        "description": "Type of schedule trigger",
+                    },
+                    "interval_hours": {
+                        "type": "integer",
+                        "description": "Hours between runs (for interval trigger)",
+                    },
+                    "interval_minutes": {
+                        "type": "integer",
+                        "description": "Minutes between runs (for interval trigger)",
+                    },
+                    "interval_seconds": {
+                        "type": "integer",
+                        "description": "Seconds between runs (for interval trigger)",
+                    },
+                    "cron_expression": {
+                        "type": "string",
+                        "description": "Cron expression: 'minute hour day month day_of_week' (for cron trigger)",
+                    },
+                    "run_date": {
+                        "type": "string",
+                        "description": "ISO 8601 date/time for one-time run (for date trigger)",
+                    },
+                    "max_runs": {
+                        "type": "integer",
+                        "description": "Maximum number of runs (optional, unlimited if not set)",
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether the schedule is enabled",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags for categorizing the schedule",
+                    },
+                },
+                "required": ["name", "test_name", "trigger_type"],
+            },
+        ),
+        Tool(
+            name="list_schedules",
+            description="List all schedules",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Filter by enabled status",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Filter by tag",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum number of schedules to return",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_schedule",
+            description="Get details of a specific schedule",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "ID of the schedule",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+        ),
+        Tool(
+            name="pause_schedule",
+            description="Pause a schedule to temporarily stop it from running",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "ID of the schedule to pause",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+        ),
+        Tool(
+            name="resume_schedule",
+            description="Resume a paused schedule",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "ID of the schedule to resume",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+        ),
+        Tool(
+            name="delete_schedule",
+            description="Delete a schedule permanently",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "schedule_id": {
+                        "type": "string",
+                        "description": "ID of the schedule to delete",
+                    },
+                },
+                "required": ["schedule_id"],
+            },
+        ),
     ]
 
 
@@ -263,6 +403,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return await rerun_test(arguments)
     elif name == "get_test_results":
         return await get_test_results(arguments)
+    # Schedule tools
+    elif name == "create_schedule":
+        return await create_schedule(arguments)
+    elif name == "list_schedules":
+        return await list_schedules(arguments)
+    elif name == "get_schedule":
+        return await get_schedule(arguments)
+    elif name == "pause_schedule":
+        return await pause_schedule(arguments)
+    elif name == "resume_schedule":
+        return await resume_schedule(arguments)
+    elif name == "delete_schedule":
+        return await delete_schedule(arguments)
     else:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -603,6 +756,244 @@ def format_run_result(result: dict, compact: bool = False) -> str:
                 output.append(f"    {code}: {count}")
 
     return "\n".join(output)
+
+
+# Schedule tool implementations
+
+async def create_schedule(args: dict[str, Any]) -> list[TextContent]:
+    """Create a new schedule."""
+    trigger_type = args["trigger_type"]
+
+    # Build trigger based on type
+    if trigger_type == "interval":
+        trigger: dict[str, Any] = {"type": "interval"}
+        if args.get("interval_hours"):
+            trigger["hours"] = args["interval_hours"]
+        if args.get("interval_minutes"):
+            trigger["minutes"] = args["interval_minutes"]
+        if args.get("interval_seconds"):
+            trigger["seconds"] = args["interval_seconds"]
+        # Default to 1 hour if no interval specified
+        if len(trigger) == 1:
+            trigger["hours"] = 1
+
+    elif trigger_type == "cron":
+        cron_expr = args.get("cron_expression", "* * * * *")
+        parts = cron_expr.split()
+        if len(parts) != 5:
+            return [TextContent(
+                type="text",
+                text="Invalid cron expression. Format: 'minute hour day month day_of_week'"
+            )]
+        trigger = {
+            "type": "cron",
+            "minute": parts[0],
+            "hour": parts[1],
+            "day": parts[2],
+            "month": parts[3],
+            "day_of_week": parts[4],
+            "timezone": "UTC",
+        }
+
+    elif trigger_type == "date":
+        run_date = args.get("run_date")
+        if not run_date:
+            return [TextContent(
+                type="text",
+                text="run_date is required for date trigger type"
+            )]
+        trigger = {
+            "type": "date",
+            "run_date": run_date,
+        }
+    else:
+        return [TextContent(
+            type="text",
+            text=f"Invalid trigger_type: {trigger_type}. Use 'interval', 'cron', or 'date'"
+        )]
+
+    # Build schedule request
+    schedule_data = {
+        "name": args["name"],
+        "test_name": args["test_name"],
+        "trigger": trigger,
+        "enabled": args.get("enabled", True),
+        "tags": args.get("tags", []),
+    }
+
+    if args.get("description"):
+        schedule_data["description"] = args["description"]
+    if args.get("max_runs"):
+        schedule_data["max_runs"] = args["max_runs"]
+
+    result = api_request("POST", "/api/v1/schedules", schedule_data)
+
+    if result.get("error"):
+        return [TextContent(type="text", text=f"Error: {result.get('message')}")]
+
+    return [TextContent(
+        type="text",
+        text=f"Schedule created successfully!\n"
+             f"ID: {result['id']}\n"
+             f"Name: {result['name']}\n"
+             f"Test: {result['test_name']}\n"
+             f"Trigger: {format_trigger(result.get('trigger', {}))}\n"
+             f"Enabled: {result['enabled']}\n"
+             f"Next Run: {result.get('next_run_time', 'Not scheduled')}",
+    )]
+
+
+async def list_schedules(args: dict[str, Any]) -> list[TextContent]:
+    """List all schedules."""
+    params = []
+    if args.get("limit"):
+        params.append(f"limit={args['limit']}")
+    if args.get("enabled") is not None:
+        params.append(f"enabled={str(args['enabled']).lower()}")
+    if args.get("tag"):
+        params.append(f"tag={args['tag']}")
+
+    query = "?" + "&".join(params) if params else ""
+    result = api_request("GET", f"/api/v1/schedules{query}")
+
+    if result.get("error"):
+        return [TextContent(type="text", text=f"Error: {result.get('message')}")]
+
+    schedules = result.get("schedules", [])
+    if not schedules:
+        return [TextContent(type="text", text="No schedules found.")]
+
+    output = [f"Schedules ({result.get('total', len(schedules))} total):", ""]
+
+    for sched in schedules:
+        status_icon = "✅" if sched.get("enabled") else "⏸️"
+        if sched.get("paused"):
+            status_icon = "⏸️"
+
+        output.append(
+            f"{status_icon} {sched['name']}\n"
+            f"   ID: {sched['id'][:8]}...\n"
+            f"   Test: {sched['test_name']}\n"
+            f"   Trigger: {format_trigger(sched.get('trigger', {}))}\n"
+            f"   Runs: {sched.get('run_count', 0)}"
+            + (f"/{sched['max_runs']}" if sched.get('max_runs') else "") +
+            f"\n   Next: {sched.get('next_run_time', 'Not scheduled')}"
+        )
+        output.append("")
+
+    return [TextContent(type="text", text="\n".join(output))]
+
+
+async def get_schedule(args: dict[str, Any]) -> list[TextContent]:
+    """Get details of a specific schedule."""
+    schedule_id = args["schedule_id"]
+    result = api_request("GET", f"/api/v1/schedules/{schedule_id}")
+
+    if result.get("error"):
+        return [TextContent(type="text", text=f"Error: {result.get('message')}")]
+
+    sched = result
+    status = "Enabled" if sched.get("enabled") else "Disabled"
+    if sched.get("paused"):
+        status = "Paused"
+
+    output = [
+        f"Schedule: {sched['name']}",
+        f"ID: {sched['id']}",
+        f"Description: {sched.get('description', 'N/A')}",
+        f"Test: {sched['test_name']}",
+        f"Status: {status}",
+        f"Trigger Type: {sched.get('trigger_type', 'unknown')}",
+        f"Trigger: {format_trigger(sched.get('trigger', {}))}",
+        f"Run Count: {sched.get('run_count', 0)}"
+        + (f"/{sched['max_runs']}" if sched.get('max_runs') else " (unlimited)"),
+        f"Next Run: {sched.get('next_run_time', 'Not scheduled')}",
+        f"Created: {sched.get('created_at', 'N/A')}",
+        f"Updated: {sched.get('updated_at', 'N/A')}",
+    ]
+
+    if sched.get("tags"):
+        output.append(f"Tags: {', '.join(sched['tags'])}")
+
+    return [TextContent(type="text", text="\n".join(output))]
+
+
+async def pause_schedule(args: dict[str, Any]) -> list[TextContent]:
+    """Pause a schedule."""
+    schedule_id = args["schedule_id"]
+    result = api_request("POST", f"/api/v1/schedules/{schedule_id}/pause")
+
+    if result.get("error"):
+        return [TextContent(type="text", text=f"Error: {result.get('message')}")]
+
+    return [TextContent(
+        type="text",
+        text=f"Schedule paused successfully!\n"
+             f"ID: {result.get('id', schedule_id)}\n"
+             f"Message: {result.get('message', 'Schedule has been paused')}",
+    )]
+
+
+async def resume_schedule(args: dict[str, Any]) -> list[TextContent]:
+    """Resume a paused schedule."""
+    schedule_id = args["schedule_id"]
+    result = api_request("POST", f"/api/v1/schedules/{schedule_id}/resume")
+
+    if result.get("error"):
+        return [TextContent(type="text", text=f"Error: {result.get('message')}")]
+
+    return [TextContent(
+        type="text",
+        text=f"Schedule resumed successfully!\n"
+             f"ID: {result.get('id', schedule_id)}\n"
+             f"Message: {result.get('message', 'Schedule has been resumed')}",
+    )]
+
+
+async def delete_schedule(args: dict[str, Any]) -> list[TextContent]:
+    """Delete a schedule."""
+    schedule_id = args["schedule_id"]
+    result = api_request("DELETE", f"/api/v1/schedules/{schedule_id}")
+
+    if result.get("error"):
+        return [TextContent(type="text", text=f"Error: {result.get('message')}")]
+
+    return [TextContent(
+        type="text",
+        text=f"Schedule deleted successfully!\n"
+             f"ID: {result.get('id', schedule_id)}\n"
+             f"Message: {result.get('message', 'Schedule has been deleted')}",
+    )]
+
+
+def format_trigger(trigger: dict) -> str:
+    """Format a trigger dict for display."""
+    trigger_type = trigger.get("type", "unknown")
+
+    if trigger_type == "interval":
+        parts = []
+        if trigger.get("days"):
+            parts.append(f"{trigger['days']}d")
+        if trigger.get("hours"):
+            parts.append(f"{trigger['hours']}h")
+        if trigger.get("minutes"):
+            parts.append(f"{trigger['minutes']}m")
+        if trigger.get("seconds"):
+            parts.append(f"{trigger['seconds']}s")
+        return f"Every {' '.join(parts)}" if parts else "Interval (not set)"
+
+    elif trigger_type == "cron":
+        minute = trigger.get("minute", "*")
+        hour = trigger.get("hour", "*")
+        day = trigger.get("day", "*")
+        month = trigger.get("month", "*")
+        dow = trigger.get("day_of_week", "*")
+        return f"Cron: {minute} {hour} {day} {month} {dow}"
+
+    elif trigger_type == "date":
+        return f"One-time: {trigger.get('run_date', 'N/A')}"
+
+    return str(trigger)
 
 
 async def main() -> None:
