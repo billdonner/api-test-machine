@@ -27,6 +27,7 @@ struct ANSIRenderer {
     static func clearScreen() -> String { "\u{001B}[2J\u{001B}[H" }
     static func moveTo(row: Int, col: Int) -> String { "\u{001B}[\(row);\(col)H" }
     static func clearLine() -> String { "\u{001B}[2K" }
+    static func setWindowTitle(_ title: String) -> String { "\u{001B}]0;\(title)\u{0007}" }
 
     // MARK: - Box Drawing
 

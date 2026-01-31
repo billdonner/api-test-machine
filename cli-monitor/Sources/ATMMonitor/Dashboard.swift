@@ -30,7 +30,8 @@ class Dashboard {
             self?.handleKey(char)
         }
 
-        // Hide cursor
+        // Set window title and hide cursor
+        print(ANSIRenderer.setWindowTitle("API Test Machine Monitor"), terminator: "")
         print(ANSIRenderer.hideCursor(), terminator: "")
         fflush(stdout)
 
@@ -115,6 +116,7 @@ class Dashboard {
 
     private func cleanup() {
         keyboard.disable()
+        print(ANSIRenderer.setWindowTitle(""), terminator: "")  // Reset window title
         print(ANSIRenderer.showCursor())
         print(ANSIRenderer.clearScreen(), terminator: "")
         print("Monitor stopped.")
