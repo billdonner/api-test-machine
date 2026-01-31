@@ -33,16 +33,39 @@ actor APIClient {
             let container = try decoder.singleValueContainer()
             let dateString = try container.decode(String.self)
 
-            // Try ISO8601 with fractional seconds
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: dateString) {
+            // Try ISO8601 with timezone and fractional seconds
+            let iso8601 = ISO8601DateFormatter()
+            iso8601.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = iso8601.date(from: dateString) {
                 return date
             }
 
-            // Try ISO8601 without fractional seconds
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: dateString) {
+            // Try ISO8601 with timezone, no fractional seconds
+            iso8601.formatOptions = [.withInternetDateTime]
+            if let date = iso8601.date(from: dateString) {
+                return date
+            }
+
+            // Try without timezone (API returns dates like "2026-01-30T23:40:28.371214")
+            let dateFormatter = DateFormatter()
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateFormatter.timeZone = TimeZone(identifier: "UTC")
+
+            // With fractional seconds, no timezone
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            if let date = dateFormatter.date(from: dateString) {
+                return date
+            }
+
+            // With fewer fractional second digits
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+            if let date = dateFormatter.date(from: dateString) {
+                return date
+            }
+
+            // Without fractional seconds, no timezone
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            if let date = dateFormatter.date(from: dateString) {
                 return date
             }
 
