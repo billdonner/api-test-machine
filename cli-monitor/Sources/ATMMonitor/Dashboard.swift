@@ -31,7 +31,7 @@ class Dashboard {
         }
 
         // Set window title and hide cursor
-        print(ANSIRenderer.setWindowTitle("API Test Machine Monitor"), terminator: "")
+        print(ANSIRenderer.setWindowTitle("automated testing claude"), terminator: "")
         print(ANSIRenderer.hideCursor(), terminator: "")
         fflush(stdout)
 
