@@ -15,6 +15,7 @@ import type {
 	ScheduleActionResponse,
 	ScheduleListResponse,
 	StorageStatus,
+	SystemStatus,
 	TestConfigList
 } from './types';
 
@@ -135,6 +136,11 @@ class ApiClient {
 
 	async resumeSchedule(id: string): Promise<ScheduleActionResponse> {
 		return this.request<ScheduleActionResponse>('POST', `/api/v1/schedules/${id}/resume`);
+	}
+
+	// System status endpoint
+	async getSystemStatus(): Promise<SystemStatus> {
+		return this.request<SystemStatus>('GET', '/api/v1/system/status');
 	}
 }
 

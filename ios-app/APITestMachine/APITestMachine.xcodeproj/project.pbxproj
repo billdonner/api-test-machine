@@ -41,6 +41,9 @@
 		A10000320000000100000032 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000320000000100000032 /* Constants.swift */; };
 		A10000330000000100000033 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000330000000100000033 /* Assets.xcassets */; };
 		A10000340000000100000034 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000340000000100000034 /* Preview Assets.xcassets */; };
+		A10000350000000100000035 /* SystemStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000350000000100000035 /* SystemStatus.swift */; };
+		A10000360000000100000036 /* MonitorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000360000000100000036 /* MonitorViewModel.swift */; };
+		A10000370000000100000037 /* MonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000370000000100000037 /* MonitorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -79,6 +82,9 @@
 		A20000320000000100000032 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		A20000330000000100000033 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000340000000100000034 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		A20000350000000100000035 /* SystemStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStatus.swift; sourceTree = "<group>"; };
+		A20000360000000100000036 /* MonitorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitorViewModel.swift; sourceTree = "<group>"; };
+		A20000370000000100000037 /* MonitorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,6 +147,7 @@
 				A20000050000000100000005 /* Metrics.swift */,
 				A20000060000000100000006 /* RunResult.swift */,
 				A20000070000000100000007 /* Schedule.swift */,
+				A20000350000000100000035 /* SystemStatus.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -161,6 +168,7 @@
 				A20000110000000100000011 /* RunDetailViewModel.swift */,
 				A20000120000000100000012 /* CreateTestViewModel.swift */,
 				A20000130000000100000013 /* SchedulesViewModel.swift */,
+				A20000360000000100000036 /* MonitorViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -169,6 +177,7 @@
 			isa = PBXGroup;
 			children = (
 				A40000120000000100000012 /* Dashboard */,
+				A40000170000000100000017 /* Monitor */,
 				A40000130000000100000013 /* RunDetail */,
 				A40000140000000100000014 /* CreateTest */,
 				A40000150000000100000015 /* Schedules */,
@@ -251,6 +260,14 @@
 				A20000260000000100000026 /* SettingsView.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		A40000170000000100000017 /* Monitor */ = {
+			isa = PBXGroup;
+			children = (
+				A20000370000000100000037 /* MonitorView.swift */,
+			);
+			path = Monitor;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -355,6 +372,9 @@
 				A10000300000000100000030 /* RunsPerDayChart.swift in Sources */,
 				A10000310000000100000031 /* Extensions.swift in Sources */,
 				A10000320000000100000032 /* Constants.swift in Sources */,
+				A10000350000000100000035 /* SystemStatus.swift in Sources */,
+				A10000360000000100000036 /* MonitorViewModel.swift in Sources */,
+				A10000370000000100000037 /* MonitorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

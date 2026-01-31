@@ -18,6 +18,7 @@ from api.models import (
     DeleteRunResponse,
     ErrorResponse,
     HealthResponse,
+    ProcessStatus,
     RequestDetail,
     RequestSummary,
     RunDetail,
@@ -26,6 +27,7 @@ from api.models import (
     SetEnabledRequest,
     SetEnabledResponse,
     StorageStatusResponse,
+    SystemStatusResponse,
     TestConfigListResponse,
     TestConfigResponse,
 )
@@ -41,6 +43,7 @@ health_router = APIRouter(tags=["health"])
 runs_router = APIRouter(prefix="/runs", tags=["runs"])
 storage_router = APIRouter(prefix="/storage", tags=["storage"])
 tests_router = APIRouter(prefix="/tests", tags=["tests"])
+system_router = APIRouter(prefix="/system", tags=["system"])
 
 # Re-export schedules router and initializer
 from api.schedules import schedules_router, init_orchestrator
@@ -644,4 +647,136 @@ async def get_test_report(
         headers={
             "Content-Disposition": "attachment; filename=test-report.pdf"
         }
+    )
+
+
+# System status endpoint
+import socket
+import time
+
+# Track server start time for uptime calculation
+_server_start_time = time.time()
+
+
+def is_port_listening(port: int) -> bool:
+    """Check if a port is listening on localhost."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            result = s.connect_ex(('127.0.0.1', port))
+            return result == 0
+    except Exception:
+        return False
+
+
+@system_router.get(
+    "/status",
+    response_model=SystemStatusResponse,
+    responses={401: {"model": ErrorResponse}},
+)
+async def get_system_status(
+    api_key: ApiKeyDep,
+) -> SystemStatusResponse:
+    """Get system-wide status for monitor page.
+
+    Returns server health, process status, run statistics, and active runs/schedules.
+    """
+    store = get_storage()
+    exec = get_executor()
+
+    # Server info
+    uptime = time.time() - _server_start_time
+    server_info = {
+        "online": True,
+        "version": "0.1.0",
+        "uptime": uptime,
+    }
+
+    # Process status - check all monitored services
+    processes = [
+        ProcessStatus(name="API Server", port=8000, running=is_port_listening(8000)),
+        ProcessStatus(name="Webapp", port=5173, running=is_port_listening(5173)),
+        ProcessStatus(name="Mock Server", port=3000, running=is_port_listening(3000)),
+        ProcessStatus(name="Agent/Scheduler", port=8001, running=is_port_listening(8001)),
+    ]
+
+    # Get runs for statistics
+    runs, total = await store.list_runs(limit=500)
+
+    # Calculate stats
+    active_runs_list = []
+    passed_count = 0
+    failed_count = 0
+    active_count = 0
+
+    for r in runs:
+        # Check if run is currently active
+        active = exec.get_active_run(r.id)
+        if active:
+            active_count += 1
+            active_runs_list.append(RunSummary(
+                id=active.id,
+                name=active.spec.name,
+                status=active.status,
+                started_at=active.started_at,
+                completed_at=active.completed_at,
+                total_requests=active.spec.total_requests,
+                requests_completed=active.requests_completed,
+                passed=active.passed,
+            ))
+        elif r.status in (RunStatus.RUNNING, RunStatus.PENDING):
+            active_count += 1
+            active_runs_list.append(RunSummary(
+                id=r.id,
+                name=r.spec.name,
+                status=r.status,
+                started_at=r.started_at,
+                completed_at=r.completed_at,
+                total_requests=r.spec.total_requests,
+                requests_completed=r.requests_completed,
+                passed=r.passed,
+            ))
+
+        if r.passed is True:
+            passed_count += 1
+        elif r.passed is False:
+            failed_count += 1
+
+    completed_count = passed_count + failed_count
+    pass_rate = (passed_count / completed_count * 100) if completed_count > 0 else 0
+
+    stats = {
+        "total_runs": total,
+        "active_runs": active_count,
+        "passed_runs": passed_count,
+        "failed_runs": failed_count,
+        "pass_rate": round(pass_rate, 1),
+    }
+
+    # Get active schedules
+    from api.schedules import get_orchestrator
+    active_schedules = []
+    try:
+        orchestrator = get_orchestrator()
+        schedules = await orchestrator.list_schedules()
+        for s in schedules:
+            if s.get("enabled") and not s.get("paused"):
+                active_schedules.append({
+                    "id": s.get("id"),
+                    "name": s.get("name"),
+                    "test_name": s.get("test_name"),
+                    "trigger_type": s.get("trigger_type"),
+                    "run_count": s.get("run_count", 0),
+                    "max_runs": s.get("max_runs"),
+                    "next_run_time": s.get("next_run_time"),
+                })
+    except Exception:
+        pass  # Orchestrator may not be initialized
+
+    return SystemStatusResponse(
+        server=server_info,
+        processes=processes,
+        stats=stats,
+        active_runs=active_runs_list,
+        active_schedules=active_schedules,
     )

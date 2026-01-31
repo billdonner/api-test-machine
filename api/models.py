@@ -195,6 +195,22 @@ class BatchRunResponse(BaseModel):
     summary: dict = Field(default_factory=dict)
 
 
+class ProcessStatus(BaseModel):
+    """Status of a system process."""
+    name: str
+    port: int
+    running: bool
+
+
+class SystemStatusResponse(BaseModel):
+    """System-wide status response for monitor page."""
+    server: dict  # online, version, uptime
+    processes: list[ProcessStatus]
+    stats: dict  # total_runs, active_runs, passed_runs, failed_runs, pass_rate
+    active_runs: list[RunSummary]
+    active_schedules: list[dict]
+
+
 class StorageStatusResponse(BaseModel):
     """Detailed storage status response."""
     storage_type: str

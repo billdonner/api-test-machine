@@ -266,3 +266,38 @@ export interface ScheduleActionResponse {
 	success: boolean;
 	message: string;
 }
+
+// System status types for monitor page
+export interface ProcessStatus {
+	name: string;
+	port: number;
+	running: boolean;
+}
+
+export interface ActiveSchedule {
+	id: string;
+	name: string;
+	test_name: string;
+	trigger_type: string;
+	run_count: number;
+	max_runs: number | null;
+	next_run_time: string | null;
+}
+
+export interface SystemStatus {
+	server: {
+		online: boolean;
+		version: string;
+		uptime: number;
+	};
+	processes: ProcessStatus[];
+	stats: {
+		total_runs: number;
+		active_runs: number;
+		passed_runs: number;
+		failed_runs: number;
+		pass_rate: number;
+	};
+	active_runs: RunSummary[];
+	active_schedules: ActiveSchedule[];
+}

@@ -19,17 +19,23 @@ struct ContentView: View {
                 }
                 .tag(0)
 
+            MonitorView()
+                .tabItem {
+                    Label("Monitor", systemImage: "waveform.path.ecg")
+                }
+                .tag(1)
+
             SchedulesView()
                 .tabItem {
                     Label("Schedules", systemImage: "calendar.badge.clock")
                 }
-                .tag(1)
+                .tag(2)
 
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(2)
+                .tag(3)
         }
     }
 }

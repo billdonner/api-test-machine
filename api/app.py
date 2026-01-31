@@ -15,6 +15,7 @@ from api.routes import (
     runs_router,
     schedules_router,
     storage_router,
+    system_router,
     tests_router,
 )
 from api.storage_base import create_storage
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(storage_router, prefix="/api/v1")
     app.include_router(tests_router, prefix="/api/v1")
     app.include_router(schedules_router, prefix="/api/v1")
+    app.include_router(system_router, prefix="/api/v1")
 
     return app
 

@@ -173,6 +173,12 @@ actor APIClient {
         return try await post(path: "/tests/run-all", body: request)
     }
 
+    // MARK: - System Status
+
+    func getSystemStatus() async throws -> SystemStatus {
+        return try await get(path: "/system/status")
+    }
+
     // MARK: - Private HTTP Methods
 
     private func get<T: Decodable & Sendable>(path: String, queryItems: [URLQueryItem] = []) async throws -> T {
