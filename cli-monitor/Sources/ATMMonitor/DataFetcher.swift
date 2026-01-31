@@ -151,6 +151,18 @@ func getProcesses() -> [ATMProcessInfo] {
             pid: nil
         ),
         ATMProcessInfo(
+            name: "Webapp",
+            port: 5173,
+            isRunning: isPortListening(5173),
+            pid: nil
+        ),
+        ATMProcessInfo(
+            name: "Mock Server",
+            port: 3000,
+            isRunning: isPortListening(3000),
+            pid: nil
+        ),
+        ATMProcessInfo(
             name: "Agent/Scheduler",
             port: 8001,
             isRunning: isPortListening(8001),
