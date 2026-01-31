@@ -22,8 +22,8 @@ class SettingsManager {
         static let apiKeyService = "com.apitestmachine.apikey"
     }
 
-    // Default values
-    static let defaultAPIBaseURL = "http://localhost:8000"
+    // Default values (includes /api/v1 prefix)
+    static let defaultAPIBaseURL = "http://localhost:8000/api/v1"
     static let defaultPollingInterval = 3.0
 
     var apiBaseURL: String {

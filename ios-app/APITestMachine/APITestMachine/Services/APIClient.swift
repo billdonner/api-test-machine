@@ -10,8 +10,8 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
 
-    // Default to localhost for development
-    private static let defaultBaseURL = URL(string: "http://localhost:8000")!
+    // Default to localhost for development (includes /api/v1 prefix)
+    private static let defaultBaseURL = URL(string: "http://localhost:8000/api/v1")!
 
     private var baseURL: URL
     private var apiKey: String
