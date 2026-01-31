@@ -61,6 +61,9 @@ class DashboardViewModel {
     }
 
     func refresh() async {
+        isLoading = true
+        defer { isLoading = false }
+
         do {
             let response = try await APIClient.shared.listRuns(status: selectedStatus, limit: 100)
             self.runs = response.runs
