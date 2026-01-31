@@ -10,14 +10,19 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
 
-    private var baseURL: URL?
-    private var apiKey: String?
+    // Default to localhost for development
+    private static let defaultBaseURL = URL(string: "http://localhost:8000")!
+
+    private var baseURL: URL
+    private var apiKey: String
 
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
     init() {
+        self.baseURL = Self.defaultBaseURL
+        self.apiKey = ""
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
@@ -165,10 +170,6 @@ actor APIClient {
     }
 
     private func buildRequest(path: String, method: String, queryItems: [URLQueryItem] = []) throws -> URLRequest {
-        guard let baseURL = baseURL else {
-            throw APIError.missingBaseURL
-        }
-
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true)
         if !queryItems.isEmpty {
             components?.queryItems = queryItems
@@ -182,7 +183,7 @@ actor APIClient {
         request.httpMethod = method
 
         // Add API key if available (not required for health check)
-        if let apiKey = apiKey, !path.contains("/health") {
+        if !apiKey.isEmpty && !path.contains("/health") {
             request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
         }
 
