@@ -91,8 +91,14 @@ struct SettingsView: View {
                             .frame(maxWidth: 200)
                         }
                     }
+
+                    Toggle("Show Connection Status", isOn: $settings.showConnectionStatus)
+
+                    Toggle("Compact Run List", isOn: $settings.compactRunList)
                 } header: {
                     Text("Dashboard")
+                } footer: {
+                    Text("Connection status shows server online/offline indicator. Compact list shows more runs on screen.")
                 }
 
                 Section {
@@ -102,10 +108,16 @@ struct SettingsView: View {
                         Text("Clear API Key")
                     }
                     .disabled(settingsManager.apiKey.isEmpty)
+
+                    Button {
+                        settingsManager.resetToDefaults()
+                    } label: {
+                        Text("Reset to Defaults")
+                    }
                 } header: {
                     Text("Security")
                 } footer: {
-                    Text("Your API key is stored securely in the iOS Keychain.")
+                    Text("Your API key is stored securely in the iOS Keychain. Reset to Defaults restores all settings except the API key.")
                 }
 
                 Section {

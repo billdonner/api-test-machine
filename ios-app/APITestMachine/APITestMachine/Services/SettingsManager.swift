@@ -17,8 +17,14 @@ class SettingsManager {
         static let apiBaseURL = "apiBaseURL"
         static let pollingInterval = "pollingInterval"
         static let autoRefresh = "autoRefresh"
+        static let showConnectionStatus = "showConnectionStatus"
+        static let compactRunList = "compactRunList"
         static let apiKeyService = "com.apitestmachine.apikey"
     }
+
+    // Default values
+    static let defaultAPIBaseURL = "http://localhost:8000"
+    static let defaultPollingInterval = 3.0
 
     var apiBaseURL: String {
         didSet {
@@ -46,8 +52,24 @@ class SettingsManager {
         }
     }
 
+    var showConnectionStatus: Bool {
+        didSet {
+            defaults.set(showConnectionStatus, forKey: Keys.showConnectionStatus)
+        }
+    }
+
+    var compactRunList: Bool {
+        didSet {
+            defaults.set(compactRunList, forKey: Keys.compactRunList)
+        }
+    }
+
     var isConfigured: Bool {
-        !apiBaseURL.isEmpty && !apiKey.isEmpty
+        !apiBaseURL.isEmpty
+    }
+
+    var hasAPIKey: Bool {
+        !apiKey.isEmpty
     }
 
     var baseURL: URL? {
@@ -55,17 +77,27 @@ class SettingsManager {
     }
 
     init() {
-        // Initialize all stored properties first
-        self.apiBaseURL = defaults.string(forKey: Keys.apiBaseURL) ?? ""
+        // Initialize all stored properties first with sensible defaults
+        self.apiBaseURL = defaults.string(forKey: Keys.apiBaseURL) ?? Self.defaultAPIBaseURL
         self.apiKey = Self.loadAPIKeyFromKeychain() ?? ""
 
         let savedInterval = defaults.double(forKey: Keys.pollingInterval)
-        self.pollingInterval = savedInterval > 0 ? savedInterval : 3.0
+        self.pollingInterval = savedInterval > 0 ? savedInterval : Self.defaultPollingInterval
 
         self.autoRefresh = defaults.object(forKey: Keys.autoRefresh) as? Bool ?? true
+        self.showConnectionStatus = defaults.object(forKey: Keys.showConnectionStatus) as? Bool ?? true
+        self.compactRunList = defaults.object(forKey: Keys.compactRunList) as? Bool ?? false
 
         // Now safe to call methods that use self
         updateAPIClient()
+    }
+
+    func resetToDefaults() {
+        apiBaseURL = Self.defaultAPIBaseURL
+        pollingInterval = Self.defaultPollingInterval
+        autoRefresh = true
+        showConnectionStatus = true
+        compactRunList = false
     }
 
     private func updateAPIClient() {

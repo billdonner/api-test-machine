@@ -1,6 +1,6 @@
 # API Test Machine
 
-A REST API load testing system with multiple interfaces (CLI, MCP, WebApp) built on a Python async engine, with a rule-based agent layer for automation.
+A REST API load testing system with multiple interfaces (CLI, MCP, WebApp, iOS App, Terminal Monitor) built on a Python async engine, with a rule-based agent layer for automation.
 
 ## Features
 
@@ -17,9 +17,11 @@ A REST API load testing system with multiple interfaces (CLI, MCP, WebApp) built
 - **Multiple Interfaces**:
   - REST API for programmatic access
   - CLI for command-line usage
-  - MCP server for LLM agent integration
+  - MCP server for LLM agent integration (13 tools)
   - Web dashboard for visual monitoring
-- **Scheduling**: Cron and interval-based test automation
+  - iOS app (SwiftUI) for mobile access
+  - Terminal monitor for real-time CLI dashboard
+- **Scheduling**: Cron, interval, and one-time scheduled test automation
 
 ## Quick Start
 
@@ -270,13 +272,13 @@ atm list --limit 10 --status completed
 
 ## MCP Server
 
-The MCP server provides tools for LLM agents. See [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md) for details.
+The MCP server provides 13 tools for LLM agents. See [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md) for details.
 
 ```bash
 python -m mcp_server.server
 ```
 
-Available tools:
+**Test Run Tools:**
 - `run_api_test` - Execute a load test
 - `get_test_status` - Get run status by ID
 - `get_test_results` - Get detailed results
@@ -285,6 +287,14 @@ Available tools:
 - `create_test_spec` - Generate test spec JSON
 - `rerun_test` - Re-run a test by name
 
+**Schedule Tools:**
+- `create_schedule` - Create interval, cron, or one-time schedules
+- `list_schedules` - List all schedules with filtering
+- `get_schedule` - Get schedule details
+- `pause_schedule` - Pause a schedule
+- `resume_schedule` - Resume a paused schedule
+- `delete_schedule` - Delete a schedule
+
 ## Agent Scheduler
 
 Run scheduled tests automatically:
@@ -292,6 +302,49 @@ Run scheduled tests automatically:
 ```bash
 python -m agent.main
 ```
+
+## iOS App
+
+Native SwiftUI app for iOS 16+ with full feature parity to the web dashboard.
+
+```bash
+cd ios-app/APITestMachine
+open APITestMachine.xcodeproj
+```
+
+**Features:**
+- Dashboard with live polling and run list
+- Run detail view with Swift Charts for metrics
+- Test creation form with multi-endpoint support
+- Schedule management (create, pause, resume, delete)
+- Settings with secure API key storage (Keychain)
+
+See [ios-app/README.md](ios-app/README.md) for details.
+
+## Terminal Monitor
+
+Real-time CLI dashboard for monitoring API Test Machine services.
+
+```bash
+# Install globally
+cd cli-monitor && swift build -c release
+cp .build/release/ATMMonitor ~/bin/atm-monitor
+
+# Run
+atm-monitor                           # default localhost:8000
+atm-monitor -s http://server:8000     # custom server
+atm-monitor -r 5                      # 5 second refresh
+```
+
+**Features:**
+- Server status (online/offline, version, uptime)
+- Process detection (API Server, Agent/Scheduler)
+- Active test runs with progress bars
+- Recent completed runs with pass/fail status
+- Schedule status overview
+- Keyboard controls (R: refresh, Q: quit)
+
+See [cli-monitor/README.md](cli-monitor/README.md) for details.
 
 ## Development
 
@@ -328,9 +381,9 @@ api-test-machine/
 │   ├── database.py  # SQLAlchemy models
 │   ├── sqlite_storage.py  # SQLite storage backend
 │   └── storage_base.py    # Storage interface
-├── cli/             # Typer CLI
+├── cli/             # Typer CLI (atm command)
 ├── agent/           # Scheduler and orchestration
-├── mcp_server/      # MCP server for LLM agents
+├── mcp_server/      # MCP server for LLM agents (13 tools)
 ├── webapp/          # SvelteKit dashboard
 │   └── src/routes/
 │       ├── +page.svelte      # Dashboard
@@ -338,6 +391,20 @@ api-test-machine/
 │       ├── runs/[id]/        # Run details
 │       ├── edit/[id]/        # Edit test
 │       └── storage/          # Storage status
+├── ios-app/         # SwiftUI iOS app (iOS 16+)
+│   └── APITestMachine/
+│       ├── App/              # Entry point
+│       ├── Models/           # Data models
+│       ├── Services/         # API client, settings
+│       ├── ViewModels/       # Observable view models
+│       ├── Views/            # SwiftUI views
+│       └── Charts/           # Swift Charts
+├── cli-monitor/     # Swift terminal monitor
+│   └── Sources/ATMMonitor/
+│       ├── main.swift        # Entry point
+│       ├── Dashboard.swift   # Main render loop
+│       ├── Widgets.swift     # UI components
+│       └── DataFetcher.swift # API client
 ├── migrations/      # Alembic database migrations
 ├── tests/           # Test suite
 ├── docs/            # Documentation
@@ -348,8 +415,10 @@ api-test-machine/
 ## Documentation
 
 - [Architecture Overview](docs/ARCHITECTURE.md)
+- [API Reference](docs/API.md)
 - [MCP User Guide](docs/MCP_GUIDE.md)
-- [Development Plan](docs/PLAN.md)
+- [iOS App Guide](ios-app/README.md)
+- [Terminal Monitor Guide](cli-monitor/README.md)
 
 ## License
 

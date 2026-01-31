@@ -4,7 +4,7 @@ This guide explains how to use API Test Machine with LLM agents through the Mode
 
 ## What is MCP?
 
-MCP (Model Context Protocol) allows LLM agents like Claude to interact with external tools. API Test Machine provides an MCP server that exposes load testing capabilities as tools.
+MCP (Model Context Protocol) allows LLM agents like Claude to interact with external tools. API Test Machine provides an MCP server that exposes **13 tools** for load testing and schedule management.
 
 ## Setup
 
@@ -146,6 +146,98 @@ Generate a reusable test specification JSON.
 
 **Example prompt:**
 > "Create a test spec for testing our payments API with a 500ms latency threshold"
+
+---
+
+## Schedule Management Tools
+
+### create_schedule
+
+Create a new schedule to run tests automatically.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | Yes | Schedule name |
+| `test_name` | string | Yes | Test to run |
+| `trigger_type` | string | Yes | `interval`, `cron`, or `date` |
+| `interval_hours` | integer | No | Hours between runs |
+| `interval_minutes` | integer | No | Minutes between runs |
+| `cron_expression` | string | No | Cron: `minute hour day month day_of_week` |
+| `run_date` | string | No | ISO 8601 date for one-time run |
+| `max_runs` | integer | No | Limit total runs |
+| `enabled` | boolean | No | Enable schedule (default: true) |
+| `tags` | array | No | Tags for categorization |
+
+**Example prompts:**
+> "Create a schedule to run the 'API Health Check' test every hour"
+> "Schedule the 'Load Test' to run daily at 8am UTC"
+> "Create a one-time schedule to run 'Release Test' on Feb 1st at 10am"
+
+### list_schedules
+
+List all schedules with optional filtering.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `enabled` | boolean | No | Filter by enabled status |
+| `tag` | string | No | Filter by tag |
+| `limit` | integer | No | Max results (default: 50) |
+
+**Example prompts:**
+> "Show me all my schedules"
+> "List enabled schedules"
+
+### get_schedule
+
+Get details of a specific schedule.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `schedule_id` | string | Yes | Schedule ID |
+
+**Example prompt:**
+> "Show me details for schedule abc123"
+
+### pause_schedule
+
+Temporarily pause a schedule.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `schedule_id` | string | Yes | Schedule ID |
+
+**Example prompt:**
+> "Pause the daily health check schedule"
+
+### resume_schedule
+
+Resume a paused schedule.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `schedule_id` | string | Yes | Schedule ID |
+
+**Example prompt:**
+> "Resume the paused schedule"
+
+### delete_schedule
+
+Permanently delete a schedule.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `schedule_id` | string | Yes | Schedule ID |
+
+**Example prompt:**
+> "Delete the old release test schedule"
+
+---
 
 ## Example Conversations
 

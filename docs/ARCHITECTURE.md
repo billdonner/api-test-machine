@@ -5,26 +5,26 @@
 API Test Machine is a load testing platform designed for REST API testing with multiple access interfaces. The system follows a layered architecture with clear separation between the core engine, storage layer, API layer, and client interfaces.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Client Interfaces                         │
-├─────────────┬─────────────┬─────────────┬─────────────┬─────────┤
-│   Web App   │    CLI      │ MCP Server  │   Agent     │   API   │
-│  (SvelteKit)│   (Typer)   │  (stdio)    │ (Scheduler) │ Clients │
-└──────┬──────┴──────┬──────┴──────┬──────┴──────┬──────┴────┬────┘
-       │             │             │             │           │
-       └─────────────┴─────────────┴─────────────┴───────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
-                    │     FastAPI Control API      │
-                    │   (REST + WebSocket/SSE)     │
-                    └──────────────┬──────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │                    │                    │
-   ┌──────────▼──────────┐  ┌──────▼──────┐  ┌─────────▼─────────┐
-   │   Storage Layer      │  │ Test Engine │  │  Metrics System   │
-   │  (SQLite/JSON)       │  │  (httpx)    │  │  (Per-endpoint)   │
-   └──────────────────────┘  └─────────────┘  └───────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Client Interfaces                              │
+├───────────┬─────────┬───────────┬─────────┬──────────┬────────┬─────────┤
+│  Web App  │   CLI   │MCP Server │  Agent  │ iOS App  │Terminal│  API    │
+│ (Svelte)  │ (Typer) │ (13 tools)│(Sched.) │(SwiftUI) │Monitor │ Clients │
+└─────┬─────┴────┬────┴─────┬─────┴────┬────┴────┬─────┴───┬────┴────┬────┘
+      │          │          │          │         │         │         │
+      └──────────┴──────────┴──────────┴─────────┴─────────┴─────────┘
+                                       │
+                        ┌──────────────▼──────────────┐
+                        │     FastAPI Control API      │
+                        │   (REST + WebSocket/SSE)     │
+                        └──────────────┬──────────────┘
+                                       │
+                  ┌────────────────────┼────────────────────┐
+                  │                    │                    │
+       ┌──────────▼──────────┐  ┌──────▼──────┐  ┌─────────▼─────────┐
+       │   Storage Layer      │  │ Test Engine │  │  Metrics System   │
+       │  (SQLite/JSON)       │  │  (httpx)    │  │  (Per-endpoint)   │
+       └──────────────────────┘  └─────────────┘  └───────────────────┘
 ```
 
 ## Core Components
@@ -206,9 +206,9 @@ SvelteKit single-page application for visual test management.
 
 ### 6. MCP Server (`mcp_server/`)
 
-Model Context Protocol server for LLM agent integration.
+Model Context Protocol server for LLM agent integration with 13 tools.
 
-**Tools:**
+**Test Run Tools:**
 - `run_api_test` - Execute tests
 - `get_test_status` - Check progress
 - `get_test_results` - Retrieve results
@@ -217,9 +217,57 @@ Model Context Protocol server for LLM agent integration.
 - `cancel_test` - Stop running tests
 - `create_test_spec` - Generate JSON specs
 
+**Schedule Tools:**
+- `create_schedule` - Create interval/cron/date schedules
+- `list_schedules` - List all schedules
+- `get_schedule` - Get schedule details
+- `pause_schedule` - Pause a schedule
+- `resume_schedule` - Resume a paused schedule
+- `delete_schedule` - Delete a schedule
+
 ### 7. Agent Scheduler (`agent/`)
 
 Automated test execution with scheduling support.
+
+### 8. iOS App (`ios-app/`)
+
+Native SwiftUI application for iOS 16+ with full feature parity to webapp.
+
+**Architecture:**
+- Swift 6 strict concurrency with `@MainActor` ViewModels
+- `actor`-based APIClient for thread-safe networking
+- `Sendable` model types with `JSONValue` enum for type-safe JSON
+- Keychain storage for secure API key persistence
+
+**Key Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `APIClient` | Async HTTP client (actor) |
+| `SettingsManager` | UserDefaults + Keychain |
+| `DashboardViewModel` | Live polling, run list |
+| `CreateTestViewModel` | Test form state |
+| `SchedulesViewModel` | Schedule CRUD operations |
+
+### 9. Terminal Monitor (`cli-monitor/`)
+
+Real-time CLI dashboard for monitoring services.
+
+**Architecture:**
+- Swift Package with async-http-client
+- Double-buffered ANSI rendering for flicker-free updates
+- Non-blocking keyboard input for controls
+- Process detection via `lsof`
+
+**Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `Dashboard` | Main render loop with signal handling |
+| `DataFetcher` | HTTP client + process detection |
+| `Widgets` | UI section rendering |
+| `TerminalBuffer` | Differential screen updates |
+| `ANSIRenderer` | Colors, box drawing, formatting |
 
 ## Key Design Decisions
 
@@ -338,8 +386,12 @@ cd webapp && npm run build
 | Migrations | Alembic |
 | CLI | Typer + Rich |
 | Web Frontend | SvelteKit + Tailwind |
-| Charts | Chart.js |
-| LLM Integration | MCP SDK |
+| Web Charts | Chart.js |
+| LLM Integration | MCP SDK (13 tools) |
+| iOS App | SwiftUI + Swift Charts (iOS 16+) |
+| iOS Networking | URLSession (async/await) |
+| Terminal Monitor | Swift + async-http-client |
+| CLI Parsing | swift-argument-parser |
 
 ## Future Considerations
 
